@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}瀏覽作品 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .page-header{background:linear-gradient(135deg,var(--g900),var(--g700));color:#fff;padding:40px 0 32px}
+  .page-header h1{font-size:1.8rem;font-weight:700}
+  .filter-bar{background:#fff;border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);margin:24px 0}
+  .filter-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .filter-group{display:flex;flex-direction:column;gap:6px}
+  .filter-group label{font-size:.8rem;font-weight:600;color:var(--gray)}
+  .filter-group input{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;width:110px}
+  .filter-group input:focus{outline:none;border-color:var(--g500)}
+  .tag-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .tag-btn{padding:5px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:.82rem;font-weight:500;cursor:pointer;transition:.15s;color:var(--gray);text-decoration:none}
+  .tag-btn:hover,.tag-btn.active{background:var(--g700);color:#fff;border-color:var(--g700)}
+  .works-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px}
+  .work-card{transition:.2s;text-decoration:none;color:inherit}
+  .work-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(0,0,0,.12)}
+  .work-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--g100)}
+  .work-body{padding:14px}
+  .work-name{font-weight:700;margin-bottom:6px;color:var(--g900)}
+  .work-price{font-weight:700;color:var(--g700)}
+  .work-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="container">
+    <h1>瀏覽作品</h1>
+    <p style="opacity:.8;margin-top:6px">共 {{ works|length }} 件作品</p>
+  </div>
+</div>
+
+<div class="section" style="padding-top:24px">
+  <div class="container">
+
+    <div class="filter-bar">
+      <div class="tag-filter">
+        <a href="{{ url_for('works') }}" class="tag-btn {% if not active_tag %}active{% endif %}">全部</a>
+        {% for t in tags %}
+        <a href="{{ url_for('works', tag=t) }}" class="tag-btn {% if t == active_tag %}active{% endif %}">{{ t }}</a>
+        {% endfor %}
+      </div>
+      <form method="get" action="{{ url_for('works') }}">
+        {% if active_tag %}<input type="hidden" name="tag" value="{{ active_tag }}">{% endif %}
+        <div class="filter-row">
+          <div class="filter-group">
+            <label>最低金額 (NT$)</label>
+            <input type="number" name="min" placeholder="例：50000" value="{{ min_val }}">
+          </div>
+          <div class="filter-group">
+            <label>最高金額 (NT$)</label>
+            <input type="number" name="max" placeholder="例：200000" value="{{ max_val }}">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm" style="height:38px">篩選</button>
+          {% if min_val or max_val %}<a href="{{ url_for('works', tag=active_tag) }}" class="btn btn-outline btn-sm" style="height:38px">清除</a>{% endif %}
+        </div>
+      </form>
+    </div>
+
+    {% if works %}
+    <div class="works-grid">
+      {% for w in works %}
+      {% set imgs = photo_urls(w.get('照片IDs','')) %}
+      <a href="{{ url_for('work_detail', work_id=w['作品ID']) }}" class="work-card card">
+        {% if imgs %}
+        <img class="work-thumb" src="{{ imgs[0] }}" alt="{{ w['作品名稱'] }}" loading="lazy">
+        {% else %}
+        <div class="work-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--g300);font-size:2.5rem">🌿</div>
+        {% endif %}
+        <div class="work-body">
+          <div class="work-name">{{ w['作品名稱'] }}</div>
+          <div class="work-price">{{ fmt_price(w['完工金額']) }}</div>
+          <div class="work-tags">
+            {% for t in w.get('標籤','').split(',') %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:80px 0;color:var(--gray)">
+      <div style="font-size:3rem;margin-bottom:12px">🌱</div>
+      <p>目前沒有符合條件的作品</p>
+      <a href="{{ url_for('works') }}" class="btn btn-outline" style="margin-top:16px">查看全部</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

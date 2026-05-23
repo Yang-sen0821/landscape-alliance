@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}我的作品 — 台灣景觀聯盟{% endblock %}
+{% block content %}
+<div class="section">
+  <div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:28px">
+      <div>
+        <div class="section-title" style="margin-bottom:4px">我的作品</div>
+        <p style="color:var(--gray)">登入中：{{ session.get('name','') }}</p>
+      </div>
+      <a href="{{ url_for('upload') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> 上傳新作品</a>
+    </div>
+
+    {% if works %}
+    <div style="display:flex;flex-direction:column;gap:14px">
+      {% for w in works %}
+      {% set imgs = photo_urls(w.get('照片IDs','')) %}
+      <div class="card" style="display:flex;align-items:center;gap:16px;padding:16px">
+        {% if imgs %}
+        <img src="{{ imgs[0] }}" style="width:80px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0">
+        {% else %}
+        <div style="width:80px;height:60px;background:var(--g100);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🌿</div>
+        {% endif %}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--g900)">{{ w['作品名稱'] }}</div>
+          <div style="font-size:.85rem;color:var(--gray);margin-top:2px">{{ fmt_price(w['完工金額']) }} &nbsp;·&nbsp; {{ w['建立時間'] }}</div>
+        </div>
+        <span class="badge badge-{{ w.get('狀態','pending') }}">
+          {% if w.get('狀態') == 'published' %}已上架
+          {% elif w.get('狀態') == 'rejected' %}已退回
+          {% else %}審核中{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:80px 0;color:var(--gray)">
+      <div style="font-size:3rem;margin-bottom:12px">📁</div>
+      <p>還沒有上傳任何作品</p>
+      <a href="{{ url_for('upload') }}" class="btn btn-primary" style="margin-top:16px">立即上傳</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

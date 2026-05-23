@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: landscape-alliance
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: g2349311@gmail.com
+      - key: SHEET_ID
+        value: 1E76TuBWUEUw93KjOz_xgNGcTqUuDhc0AdfFpShVIWbs
+      - key: DRIVE_FOLDER_ID
+        value: 1qCzsnVGQl6RAQprtWuh4aCMt98J59BkD
+      - key: CONTACT_PHONE
+        value: "0910-006-229"
+      - key: GOOGLE_CREDENTIALS
+        sync: false

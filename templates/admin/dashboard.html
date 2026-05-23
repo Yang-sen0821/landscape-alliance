@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}後台管理 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .tab-nav{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:24px}
+  .tab-btn{padding:10px 20px;border:none;background:none;font-size:.9rem;font-weight:600;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s}
+  .tab-btn.active{color:var(--g700);border-bottom-color:var(--g700)}
+  .tab-content{display:none}.tab-content.active{display:block}
+  .work-row{display:flex;align-items:center;gap:14px;padding:14px;border-bottom:1px solid var(--border)}
+  .work-row:last-child{border-bottom:none}
+  .work-row img{width:72px;height:54px;object-fit:cover;border-radius:6px;flex-shrink:0}
+</style>
+{% endblock %}
+{% block content %}
+<div class="section" style="padding-top:28px">
+  <div class="container">
+    <div class="section-title" style="margin-bottom:24px">後台管理</div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="showTab('pending')">待審核 <span style="background:#fef9c3;color:#854d0e;border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ pending|length }}</span></button>
+      <button class="tab-btn" onclick="showTab('published')">已上架 <span style="background:#dcfce7;color:#166534;border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ published|length }}</span></button>
+      <button class="tab-btn" onclick="showTab('contacts')">諮詢紀錄 <span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ contacts|length }}</span></button>
+      <button class="tab-btn" onclick="showTab('members')">會員 <span style="background:var(--g100);color:var(--g700);border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ members|length }}</span></button>
+    </div>
+
+    <!-- 待審核 -->
+    <div id="tab-pending" class="tab-content active">
+      {% if pending %}
+      <div class="card">
+        {% for w in pending %}
+        {% set imgs = photo_urls(w.get('照片IDs','')) %}
+        <div class="work-row">
+          {% if imgs %}<img src="{{ imgs[0] }}" alt="">{% endif %}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">{{ w['作品名稱'] }}</div>
+            <div style="font-size:.82rem;color:var(--gray)">{{ w['上傳者Email'] }} &nbsp;·&nbsp; {{ w['建立時間'] }}</div>
+            <div style="font-size:.82rem;margin-top:3px">{{ fmt_price(w['完工金額']) }}</div>
+          </div>
+          <a href="{{ url_for('admin_work', work_id=w['作品ID']) }}" class="btn btn-primary btn-sm">審核</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:48px 0">目前沒有待審核的作品 🎉</p>
+      {% endif %}
+    </div>
+
+    <!-- 已上架 -->
+    <div id="tab-published" class="tab-content">
+      {% if published %}
+      <div class="card">
+        {% for w in published %}
+        {% set imgs = photo_urls(w.get('照片IDs','')) %}
+        <div class="work-row">
+          {% if imgs %}<img src="{{ imgs[0] }}" alt="">{% endif %}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">{{ w['作品名稱'] }}</div>
+            <div style="font-size:.82rem;color:var(--gray)">{{ fmt_price(w['完工金額']) }}</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+              {% for t in w.get('標籤','').split(',') %}{% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <a href="{{ url_for('work_detail', work_id=w['作品ID']) }}" class="btn btn-outline btn-sm" target="_blank"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('admin_work', work_id=w['作品ID']) }}" class="btn btn-outline btn-sm">編輯</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:48px 0">尚無上架作品</p>
+      {% endif %}
+    </div>
+
+    <!-- 諮詢紀錄 -->
+    <div id="tab-contacts" class="tab-content">
+      {% if contacts %}
+      <div class="card">
+        {% for c in contacts|reverse %}
+        <div style="padding:14px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <strong>{{ c['姓名'] }}</strong> &nbsp;<span style="color:var(--gray);font-size:.85rem">{{ c['電話'] }}</span>
+              {% if c['興趣作品ID'] %}<a href="{{ url_for('work_detail', work_id=c['興趣作品ID']) }}" style="font-size:.78rem;color:var(--g500);margin-left:8px">查看參考作品</a>{% endif %}
+            </div>
+            <span style="font-size:.78rem;color:var(--gray)">{{ c['時間'] }}</span>
+          </div>
+          {% if c['訊息'] %}<p style="font-size:.88rem;color:var(--gray);margin-top:6px">{{ c['訊息'] }}</p>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:48px 0">尚無諮詢紀錄</p>
+      {% endif %}
+    </div>
+
+    <!-- 會員 -->
+    <div id="tab-members" class="tab-content">
+      {% if members %}
+      <div class="card">
+        {% for m in members %}
+        <div style="padding:14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
+          <div style="flex:1">
+            <strong>{{ m['姓名'] }}</strong> &mdash; {{ m['公司'] }}
+            <div style="font-size:.82rem;color:var(--gray)">{{ m['Email'] }} &nbsp;·&nbsp; {{ m['電話'] }}</div>
+          </div>
+          <span style="font-size:.78rem;color:var(--gray)">{{ m['註冊時間'] }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+{% endblock %}

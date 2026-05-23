@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}{{ work['作品名稱'] }} — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .gallery{display:grid;grid-template-columns:1fr;gap:0}
+  .main-photo{width:100%;max-height:520px;object-fit:cover;border-radius:var(--radius) var(--radius) 0 0;display:block}
+  .thumb-row{display:flex;gap:8px;overflow-x:auto;padding:12px;background:#fff;border-radius:0 0 var(--radius) var(--radius)}
+  .thumb{width:72px;height:54px;object-fit:cover;border-radius:6px;cursor:pointer;opacity:.6;transition:.15s;border:2px solid transparent;flex-shrink:0}
+  .thumb.active,.thumb:hover{opacity:1;border-color:var(--g500)}
+  .info-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:28px;margin-top:20px}
+  .price-big{font-size:1.8rem;font-weight:700;color:var(--g700);margin:8px 0}
+  .cta-box{background:var(--g50);border:1.5px solid var(--g300);border-radius:12px;padding:20px;margin-top:24px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section" style="padding-top:32px">
+  <div class="container">
+    <a href="{{ url_for('works') }}" style="font-size:.85rem;color:var(--gray);display:inline-flex;align-items:center;gap:4px;margin-bottom:20px">
+      <i class="bi bi-arrow-left"></i> 返回作品列表
+    </a>
+
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start" class="work-layout">
+      <!-- 左：照片 -->
+      <div>
+        <div class="card">
+          {% if photos %}
+          <img id="main-img" class="main-photo" src="{{ photos[0] }}" alt="{{ work['作品名稱'] }}">
+          {% if photos|length > 1 %}
+          <div class="thumb-row">
+            {% for p in photos %}
+            <img class="thumb {% if loop.first %}active{% endif %}" src="{{ p }}" alt="" onclick="switchPhoto(this, '{{ p }}')">
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% else %}
+          <div style="height:360px;display:flex;align-items:center;justify-content:center;color:var(--g300);font-size:4rem;background:var(--g50)">🌿</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- 右：資訊 -->
+      <div>
+        <div class="info-card">
+          <h1 style="font-size:1.4rem;font-weight:700;color:var(--g900)">{{ work['作品名稱'] }}</h1>
+          <div class="price-big">{{ fmt_price(work['完工金額']) }}</div>
+
+          {% if tags %}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+            {% for t in tags %}<span class="tag">{{ t }}</span>{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="cta-box">
+            <p style="font-weight:700;color:var(--g900);margin-bottom:6px">對這件作品有興趣？</p>
+            <p style="font-size:.88rem;color:var(--gray);margin-bottom:16px">告訴我們你的需求，我們幫你媒合最適合的設計師與施工團隊</p>
+            <a href="{{ url_for('contact', work_id=work['作品ID']) }}" class="btn btn-primary" style="width:100%;justify-content:center">
+              <i class="bi bi-chat-dots"></i> 我想要類似的作品
+            </a>
+            <a href="tel:{{ contact_phone }}" class="btn btn-outline" style="width:100%;justify-content:center;margin-top:10px">
+              <i class="bi bi-telephone"></i> {{ contact_phone }}
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+@media(max-width:760px){
+  .work-layout{grid-template-columns:1fr!important}
+}
+</style>
+<script>
+function switchPhoto(thumb, url) {
+  document.getElementById('main-img').src = url;
+  document.querySelectorAll('.thumb').forEach(t => t.classList.remove('active'));
+  thumb.classList.add('active');
+}
+</script>
+{% endblock %}

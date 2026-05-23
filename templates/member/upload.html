@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}上傳作品 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .upload-zone{border:2px dashed var(--g300);border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:.15s;background:var(--g50)}
+  .upload-zone:hover,.upload-zone.drag{border-color:var(--g500);background:var(--g100)}
+  .preview-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .preview-img{width:80px;height:60px;object-fit:cover;border-radius:6px}
+  .tag-suggest{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .tag-chip{padding:4px 12px;border-radius:20px;border:1.5px solid var(--border);font-size:.8rem;cursor:pointer;transition:.15s;background:#fff;color:var(--gray)}
+  .tag-chip:hover{border-color:var(--g500);color:var(--g700)}
+</style>
+{% endblock %}
+{% block content %}
+<div class="section">
+  <div class="container" style="max-width:580px">
+    <div class="section-title">上傳作品</div>
+    <p class="section-sub">上傳後由管理員審核，通過後公開展示</p>
+    <div class="card" style="padding:32px">
+      <form method="post" enctype="multipart/form-data">
+        <div class="form-group">
+          <label>作品名稱 *</label>
+          <input class="form-control" name="name" required placeholder="例：台南永康區 日式庭院 30坪">
+        </div>
+
+        <div class="form-group">
+          <label>照片 *（可多選，建議 3-8 張）</label>
+          <div class="upload-zone" onclick="document.getElementById('photo-input').click()" id="drop-zone">
+            <i class="bi bi-cloud-upload" style="font-size:2rem;color:var(--g500)"></i>
+            <p style="margin-top:8px;color:var(--gray)">點此選擇或拖曳圖片</p>
+            <p style="font-size:.8rem;color:var(--gray)">JPG / PNG，單檔上限 10MB</p>
+          </div>
+          <input type="file" id="photo-input" name="photos" multiple accept="image/*" style="display:none" onchange="previewPhotos(this)">
+          <div class="preview-grid" id="preview-grid"></div>
+        </div>
+
+        <div class="form-group">
+          <label>標籤（用逗號分隔）</label>
+          <input class="form-control" name="tags" id="tags-input" placeholder="例：日式,庭院,水景,石材">
+          <div class="tag-suggest">
+            {% for t in ['陽台','庭院','屋頂花園','室內綠化','商業空間','植生牆','仿生植物','水景','石材','日式','現代','熱帶風'] %}
+            <span class="tag-chip" onclick="addTag('{{ t }}')">+ {{ t }}</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>完工金額（NT$）</label>
+          <input class="form-control" name="price" type="number" placeholder="例：150000" min="0">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:13px">
+          <i class="bi bi-cloud-upload"></i> 送出等待審核
+        </button>
+      </form>
+    </div>
+    <p style="text-align:center;margin-top:16px">
+      <a href="{{ url_for('my_works') }}" style="font-size:.88rem;color:var(--gray)">查看我的上傳記錄</a>
+    </p>
+  </div>
+</div>
+<script>
+function previewPhotos(input) {
+  const grid = document.getElementById('preview-grid');
+  grid.innerHTML = '';
+  Array.from(input.files).forEach(f => {
+    const img = document.createElement('img');
+    img.className = 'preview-img';
+    img.src = URL.createObjectURL(f);
+    grid.appendChild(img);
+  });
+}
+function addTag(t) {
+  const inp = document.getElementById('tags-input');
+  const cur = inp.value.trim();
+  if (!cur) { inp.value = t; return; }
+  const tags = cur.split(',').map(x => x.trim());
+  if (!tags.includes(t)) inp.value = [...tags, t].join(',');
+}
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const inp = document.getElementById('photo-input');
+  inp.files = e.dataTransfer.files;
+  previewPhotos(inp);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block title %}台灣景觀聯盟 — 找景觀設計、施工，就來這裡{% endblock %}
+
+{% block head %}
+<style>
+  .hero{background:linear-gradient(135deg,var(--g900) 0%,var(--g700) 100%);color:#fff;padding:80px 0 64px;text-align:center}
+  .hero h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:700;line-height:1.2;margin-bottom:16px}
+  .hero p{font-size:1.1rem;opacity:.85;max-width:520px;margin:0 auto 32px}
+  .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn-hero-white{background:#fff;color:var(--g900);border-radius:10px;padding:12px 28px;font-weight:700;font-size:1rem;transition:.15s}
+  .btn-hero-white:hover{background:var(--g100);color:var(--g900)}
+  .btn-hero-outline{border:2px solid rgba(255,255,255,.6);color:#fff;border-radius:10px;padding:12px 28px;font-weight:700;font-size:1rem;transition:.15s}
+  .btn-hero-outline:hover{background:rgba(255,255,255,.1)}
+
+  .stats-bar{background:var(--g800,#1e5c3a);padding:20px 0}
+  .stats-inner{display:flex;justify-content:center;gap:48px;flex-wrap:wrap}
+  .stat{text-align:center;color:#fff}
+  .stat-num{font-size:1.8rem;font-weight:700;color:var(--g300)}
+  .stat-label{font-size:.8rem;opacity:.7;margin-top:2px}
+
+  .tag-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:32px}
+  .tag-btn{padding:6px 16px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:.85rem;font-weight:500;cursor:pointer;transition:.15s;color:var(--gray)}
+  .tag-btn:hover,.tag-btn.active{background:var(--g700);color:#fff;border-color:var(--g700)}
+
+  .works-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+  .work-card{cursor:pointer;transition:.2s}
+  .work-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(0,0,0,.12)}
+  .work-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--g100)}
+  .work-body{padding:16px}
+  .work-name{font-weight:700;font-size:1rem;margin-bottom:8px;color:var(--g900)}
+  .work-meta{display:flex;justify-content:space-between;align-items:center}
+  .work-price{font-size:.9rem;font-weight:700;color:var(--g700)}
+  .work-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="container">
+    <h1>找景觀設計 &amp; 施工<br>全台媒合，一站搞定</h1>
+    <p>瀏覽真實完工作品，告訴我們你的需求，我們幫你媒合最適合的設計師與施工團隊</p>
+    <div class="hero-btns">
+      <a href="{{ url_for('works') }}" class="btn-hero-white">瀏覽作品</a>
+      <a href="{{ url_for('contact') }}" class="btn-hero-outline">免費諮詢</a>
+    </div>
+  </div>
+</div>
+
+{% if total %}
+<div style="background:var(--g900);padding:16px 0">
+  <div class="container">
+    <div class="stats-inner">
+      <div class="stat"><div class="stat-num">{{ total }}</div><div class="stat-label">完工作品</div></div>
+      <div class="stat"><div class="stat-num">{{ tags|length }}</div><div class="stat-label">風格標籤</div></div>
+      <div class="stat"><div class="stat-num">全台</div><div class="stat-label">服務範圍</div></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="container">
+    <div class="section-title">精選作品</div>
+    <div class="section-sub">每件都是真實完工案例，含完工金額透明呈現</div>
+
+    {% if tags %}
+    <div class="tag-filter">
+      <a href="{{ url_for('works') }}" class="tag-btn">全部</a>
+      {% for t in tags[:10] %}
+      <a href="{{ url_for('works', tag=t) }}" class="tag-btn">{{ t }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if works %}
+    <div class="works-grid">
+      {% for w in works %}
+      {% set imgs = photo_urls(w.get('照片IDs','')) %}
+      <a href="{{ url_for('work_detail', work_id=w['作品ID']) }}" class="work-card card" style="display:block;text-decoration:none;color:inherit">
+        {% if imgs %}
+        <img class="work-thumb" src="{{ imgs[0] }}" alt="{{ w['作品名稱'] }}" loading="lazy">
+        {% else %}
+        <div class="work-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--g300);font-size:2rem">🌿</div>
+        {% endif %}
+        <div class="work-body">
+          <div class="work-name">{{ w['作品名稱'] }}</div>
+          <div class="work-meta">
+            <span class="work-price">{{ fmt_price(w['完工金額']) }}</span>
+            <span style="font-size:.78rem;color:var(--gray)"><i class="bi bi-images"></i> {{ w.get('照片IDs','').count(',')+1 if w.get('照片IDs') else 0 }} 張</span>
+          </div>
+          {% set wtags = w.get('標籤','').split(',') %}
+          <div class="work-tags">
+            {% for t in wtags[:3] %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% if total > 9 %}
+    <div style="text-align:center;margin-top:36px">
+      <a href="{{ url_for('works') }}" class="btn btn-outline">查看全部 {{ total }} 件作品</a>
+    </div>
+    {% endif %}
+    {% else %}
+    <p style="color:var(--gray);text-align:center;padding:60px 0">作品上架中，敬請期待</p>
+    {% endif %}
+  </div>
+</div>
+
+<div style="background:var(--g700);color:#fff;padding:60px 0;text-align:center">
+  <div class="container">
+    <h2 style="font-size:1.8rem;margin-bottom:12px">有景觀需求？</h2>
+    <p style="opacity:.85;margin-bottom:28px">告訴我們你的想法，我們幫你找到最適合的團隊</p>
+    <a href="{{ url_for('contact') }}" class="btn-hero-white" style="display:inline-block;padding:14px 36px;border-radius:10px;font-weight:700;background:#fff;color:var(--g900)">立即免費諮詢</a>
+  </div>
+</div>
+{% endblock %}

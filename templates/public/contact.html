@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}聯絡我們 — 台灣景觀聯盟{% endblock %}
+{% block content %}
+<div class="section">
+  <div class="container" style="max-width:560px">
+    <div class="section-title">免費景觀諮詢</div>
+    <p class="section-sub">留下你的需求，我們會在 24 小時內與你聯絡，協助媒合最適合的設計師與施工團隊</p>
+
+    <div class="card" style="padding:32px">
+      <form method="post">
+        <div class="form-group">
+          <label>你的姓名 *</label>
+          <input class="form-control" name="name" required placeholder="王小明">
+        </div>
+        <div class="form-group">
+          <label>聯絡電話 *</label>
+          <input class="form-control" name="phone" required placeholder="0912-345-678" type="tel">
+        </div>
+        <div class="form-group">
+          <label>需求說明</label>
+          <textarea class="form-control" name="message" rows="4" placeholder="例：想做屋頂花園，約 20 坪，預算 10-20 萬，台南市..."></textarea>
+        </div>
+        {% if work_id %}
+        <input type="hidden" name="work_id" value="{{ work_id }}">
+        <p style="font-size:.85rem;color:var(--g700);background:var(--g50);padding:10px 14px;border-radius:8px;margin-bottom:16px">
+          <i class="bi bi-check-circle"></i> 已選擇參考作品
+        </p>
+        {% endif %}
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:13px">
+          <i class="bi bi-send"></i> 送出諮詢
+        </button>
+      </form>
+    </div>
+
+    <div style="text-align:center;margin-top:24px;color:var(--gray);font-size:.9rem">
+      或直接致電 <a href="tel:{{ contact_phone }}" style="font-weight:700;color:var(--g700)">{{ contact_phone }}</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

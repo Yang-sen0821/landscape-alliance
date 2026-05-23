@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}台灣景觀聯盟{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <style>
+    :root {
+      --g900:#1b4332;--g700:#2d6a4f;--g500:#52b788;--g300:#95d5b2;
+      --g100:#d8f3dc;--g50:#f0f7f0;
+      --text:#1a2e1a;--gray:#6b7280;--border:#e5e7eb;
+      --radius:14px;--shadow:0 4px 20px rgba(0,0,0,.08);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Noto Sans TC',-apple-system,sans-serif;background:var(--g50);color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased}
+    a{color:var(--g700);text-decoration:none}
+    a:hover{color:var(--g500)}
+    .container{max-width:1160px;margin:0 auto;padding:0 20px}
+
+    /* Nav */
+    nav{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+    .nav-inner{display:flex;align-items:center;justify-content:space-between;height:60px}
+    .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.1rem;color:var(--g900)}
+    .logo svg{flex-shrink:0}
+    .nav-links{display:flex;align-items:center;gap:6px}
+    .nav-links a{padding:6px 14px;border-radius:8px;font-size:.9rem;font-weight:500;color:var(--gray);transition:.15s}
+    .nav-links a:hover,.nav-links a.active{background:var(--g50);color:var(--g700)}
+    .nav-links .btn-nav{background:var(--g700);color:#fff!important;border-radius:8px;padding:6px 16px}
+    .nav-links .btn-nav:hover{background:var(--g900)}
+
+    /* Buttons */
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:10px;font-size:.9rem;font-weight:600;border:none;cursor:pointer;transition:.15s;text-decoration:none}
+    .btn-primary{background:var(--g700);color:#fff}.btn-primary:hover{background:var(--g900);color:#fff}
+    .btn-outline{background:transparent;color:var(--g700);border:1.5px solid var(--g700)}.btn-outline:hover{background:var(--g50)}
+    .btn-sm{padding:6px 14px;font-size:.82rem;border-radius:8px}
+    .btn-danger{background:#dc2626;color:#fff}.btn-danger:hover{background:#b91c1c;color:#fff}
+
+    /* Cards */
+    .card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+
+    /* Tags */
+    .tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:600;background:var(--g100);color:var(--g700)}
+
+    /* Flash messages */
+    .flash{padding:12px 18px;border-radius:10px;margin-bottom:16px;font-size:.9rem;font-weight:500}
+    .flash.success{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+    .flash.error{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+
+    /* Forms */
+    .form-group{margin-bottom:18px}
+    .form-group label{display:block;font-size:.85rem;font-weight:600;color:var(--g900);margin-bottom:6px}
+    .form-control{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;transition:.15s;background:#fff;color:var(--text)}
+    .form-control:focus{outline:none;border-color:var(--g500);box-shadow:0 0 0 3px rgba(82,183,136,.15)}
+    textarea.form-control{resize:vertical;min-height:100px}
+
+    /* Status badge */
+    .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:700}
+    .badge-pending{background:#fef9c3;color:#854d0e}
+    .badge-published{background:#dcfce7;color:#166534}
+    .badge-rejected{background:#fee2e2;color:#991b1b}
+
+    /* Section */
+    .section{padding:60px 0}
+    .section-title{font-size:1.6rem;font-weight:700;color:var(--g900);margin-bottom:8px}
+    .section-sub{color:var(--gray);margin-bottom:36px}
+
+    footer{background:var(--g900);color:rgba(255,255,255,.7);text-align:center;padding:32px 20px;margin-top:80px;font-size:.85rem}
+    footer strong{color:#fff}
+
+    @media(max-width:640px){
+      .nav-links .nav-hide{display:none}
+      .section{padding:36px 0}
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<nav>
+  <div class="container">
+    <div class="nav-inner">
+      <a href="{{ url_for('index') }}" class="logo">
+        <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
+          <circle cx="18" cy="18" r="18" fill="#52b788"/>
+          <path d="M18 28C18 28 10 22 10 15c0-4.4 3.6-8 8-8s8 3.6 8 8c0 7-8 13-8 13z" fill="#1b4332"/>
+          <path d="M18 20c0 0-5-3-5-7 0-2.2 2.2-4 5-4s5 1.8 5 4c0 4-5 7-5 7z" fill="#95d5b2"/>
+        </svg>
+        台灣景觀聯盟
+      </a>
+      <div class="nav-links">
+        <a href="{{ url_for('works') }}" class="nav-hide">瀏覽作品</a>
+        <a href="{{ url_for('contact') }}" class="nav-hide">聯絡我們</a>
+        {% if current_user() %}
+          {% if is_admin() %}
+          <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
+          {% else %}
+          <a href="{{ url_for('upload') }}">上傳作品</a>
+          <a href="{{ url_for('my_works') }}" class="nav-hide">我的作品</a>
+          {% endif %}
+          <a href="{{ url_for('logout') }}" class="nav-hide">登出</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">登入</a>
+          <a href="{{ url_for('register') }}" class="btn-nav">加入聯盟</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="container" style="padding-top:24px;padding-bottom:8px;">
+  {% for cat, msg in get_flashed_messages(with_categories=true) %}
+  <div class="flash {{ cat }}">{{ msg }}</div>
+  {% endfor %}
+</div>
+
+{% block content %}{% endblock %}
+
+<footer>
+  <strong>台灣景觀聯盟</strong> &nbsp;·&nbsp; 全台景觀設計與施工媒合平台<br>
+  <span style="margin-top:6px;display:block;">© 2026 Taiwan Landscape Alliance</span>
+</footer>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}{{ code }} — 台灣景觀聯盟{% endblock %}
+{% block content %}
+<div style="text-align:center;padding:100px 20px">
+  <div style="font-size:4rem;font-weight:700;color:var(--g300)">{{ code }}</div>
+  <p style="font-size:1.2rem;margin:12px 0 28px;color:var(--gray)">{{ msg }}</p>
+  <a href="{{ url_for('index') }}" class="btn btn-primary">回首頁</a>
+</div>
+{% endblock %}
