@@ -10,6 +10,14 @@
   .info-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:28px;margin-top:20px}
   .price-big{font-size:1.8rem;font-weight:700;color:var(--g700);margin:8px 0}
   .cta-box{background:var(--g50);border:1.5px solid var(--g300);border-radius:12px;padding:20px;margin-top:24px}
+  .stars{color:#f4b400;font-size:1.1rem;letter-spacing:1px}
+  .star-select{display:flex;gap:8px;flex-direction:row-reverse;justify-content:flex-end}
+  .star-select input{display:none}
+  .star-select label{font-size:1.8rem;color:#ddd;cursor:pointer;transition:.15s}
+  .star-select input:checked ~ label,.star-select label:hover,.star-select label:hover ~ label{color:#f4b400}
+  .review-item{border-bottom:1px solid var(--border);padding:12px 0}
+  .review-item:last-child{border-bottom:none}
+  .rate-form{background:var(--g50);border:1.5px solid var(--g300);border-radius:12px;padding:20px;margin-top:28px}
 </style>
 {% endblock %}
 
@@ -51,6 +59,14 @@
           </div>
           {% endif %}
 
+          {% if avg %}
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+            <span class="stars">{% for i in range(avg|round|int) %}★{% endfor %}{% for i in range(5 - avg|round|int) %}☆{% endfor %}</span>
+            <span style="font-weight:700;color:var(--g700)">{{ avg }}</span>
+            <span style="font-size:.82rem;color:var(--gray)">({{ cnt }} 則評價)</span>
+          </div>
+          {% endif %}
+
           <div class="cta-box">
             <p style="font-weight:700;color:var(--g900);margin-bottom:6px">對這件作品有興趣？</p>
             <p style="font-size:.88rem;color:var(--gray);margin-bottom:16px">告訴我們你的需求，我們幫你媒合最適合的設計師與施工團隊</p>
@@ -62,6 +78,59 @@
             </a>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 評分區塊 -->
+    <div id="ratings" style="margin-top:40px">
+      {% if ratings %}
+      <h2 style="font-size:1.2rem;font-weight:700;color:var(--g900);margin-bottom:16px">
+        <i class="bi bi-star-fill" style="color:#f4b400"></i> 業主評價
+        {% if avg %}<span style="font-size:.9rem;font-weight:400;color:var(--gray);margin-left:8px">平均 {{ avg }} 分（{{ cnt }} 則）</span>{% endif %}
+      </h2>
+      <div class="card" style="padding:0 20px">
+        {% for r in ratings %}
+        <div class="review-item">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span class="stars" style="font-size:.95rem">{% for i in range(r['分數']|int) %}★{% endfor %}{% for i in range(5 - r['分數']|int) %}☆{% endfor %}</span>
+            <span style="font-weight:600;font-size:.9rem">{{ r['評分者姓名'] }}</span>
+            <span style="font-size:.78rem;color:var(--gray);margin-left:auto">{{ r['建立時間'] }}</span>
+          </div>
+          {% if r['評語'] %}<p style="font-size:.88rem;color:var(--gray);margin:0">{{ r['評語'] }}</p>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div id="rate" class="rate-form" style="margin-top:{% if ratings %}28px{% else %}0{% endif %}">
+        <p style="font-weight:700;color:var(--g900);margin-bottom:4px">為這件作品留下評價</p>
+        <p style="font-size:.82rem;color:var(--gray);margin-bottom:16px">曾施工或正在考慮的業主，您的評價對其他人很有幫助</p>
+        <form method="post" action="{{ url_for('rate_work', work_id=work['作品ID']) }}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:4px">姓名 *</label>
+              <input type="text" name="name" required placeholder="您的姓名" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+            </div>
+            <div>
+              <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:4px">電話（選填）</label>
+              <input type="tel" name="phone" placeholder="方便聯繫的電話" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem">
+            </div>
+          </div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:8px">評分 *</label>
+            <div class="star-select">
+              {% for i in [5,4,3,2,1] %}
+              <input type="radio" name="score" id="s{{ i }}" value="{{ i }}" {% if i == 5 %}checked{% endif %}>
+              <label for="s{{ i }}" title="{{ i }} 星">★</label>
+              {% endfor %}
+            </div>
+          </div>
+          <div style="margin-bottom:16px">
+            <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:4px">評語（選填）</label>
+            <textarea name="note" rows="3" placeholder="分享您的使用心得..." style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;resize:vertical"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">送出評價</button>
+        </form>
       </div>
     </div>
   </div>

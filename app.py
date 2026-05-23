@@ -105,8 +105,31 @@ def fmt_price(val):
     except Exception:
         return str(val)
 
+def get_ratings(work_id=None):
+    rows = _ws('評分').get_all_records()
+    if work_id:
+        rows = [r for r in rows if r.get('作品ID') == work_id]
+    return rows
+
+def avg_rating(work_id):
+    ratings = get_ratings(work_id)
+    scores = [int(r['分數']) for r in ratings if str(r.get('分數','')).isdigit()]
+    if not scores:
+        return None, 0
+    return round(sum(scores) / len(scores), 1), len(scores)
+
+def ratings_map(works):
+    all_r = _ws('評分').get_all_records()
+    result = {}
+    for w in works:
+        wid = w.get('作品ID')
+        scores = [int(r['分數']) for r in all_r if r.get('作品ID') == wid and str(r.get('分數','')).isdigit()]
+        result[wid] = (round(sum(scores)/len(scores),1), len(scores)) if scores else (None, 0)
+    return result
+
 app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
-                             is_admin=is_admin, current_user=current_user)
+                             is_admin=is_admin, current_user=current_user,
+                             avg_rating=avg_rating)
 
 # ── Drive upload ──────────────────────────────────────────────
 def upload_photos(files, work_id):
@@ -137,8 +160,9 @@ def upload_photos(files, work_id):
 def index():
     works = get_works('published')
     tags  = get_all_tags()
+    rmap  = ratings_map(works[:9])
     return render_template('public/index.html', works=works[:9], tags=tags,
-                           total=len(works))
+                           total=len(works), rmap=rmap)
 
 @app.route('/works')
 def works():
@@ -157,19 +181,42 @@ def works():
         filtered = [w for w in filtered
                     if str(w.get('完工金額','')).replace(',','').isdigit()
                     and int(str(w.get('完工金額','')).replace(',','')) <= int(mx)]
+    rmap = ratings_map(filtered)
     return render_template('public/works.html', works=filtered,
                            tags=get_all_tags(), active_tag=tag,
-                           min_val=mn, max_val=mx)
+                           min_val=mn, max_val=mx, rmap=rmap)
 
 @app.route('/work/<work_id>')
 def work_detail(work_id):
     work = next((w for w in get_works('published') if w.get('作品ID') == work_id), None)
     if not work:
         abort(404)
-    photos = photo_urls(work.get('照片IDs', ''), size='w1000')
-    tags   = [t.strip() for t in work.get('標籤', '').split(',') if t.strip()]
+    photos  = photo_urls(work.get('照片IDs', ''), size='w1000')
+    tags    = [t.strip() for t in work.get('標籤', '').split(',') if t.strip()]
+    ratings = get_ratings(work_id)
+    avg, cnt = avg_rating(work_id)
     return render_template('public/work.html', work=work, photos=photos, tags=tags,
-                           contact_phone=CONTACT_PHONE)
+                           contact_phone=CONTACT_PHONE,
+                           ratings=ratings, avg=avg, cnt=cnt)
+
+@app.route('/work/<work_id>/rate', methods=['POST'])
+def rate_work(work_id):
+    work = next((w for w in get_works('published') if w.get('作品ID') == work_id), None)
+    if not work:
+        abort(404)
+    name  = request.form.get('name','').strip()
+    phone = request.form.get('phone','').strip()
+    score = request.form.get('score','').strip()
+    note  = request.form.get('note','').strip()
+    if not name or not score or not score.isdigit() or not (1 <= int(score) <= 5):
+        flash('請填寫姓名並選擇評分', 'error')
+        return redirect(url_for('work_detail', work_id=work_id) + '#rate')
+    _ws('評分').append_row([
+        str(uuid.uuid4())[:8], work_id, name, phone, int(score), note,
+        datetime.now().strftime('%Y-%m-%d %H:%M')
+    ])
+    flash('感謝您的評價！', 'success')
+    return redirect(url_for('work_detail', work_id=work_id) + '#ratings')
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():

@@ -86,7 +86,12 @@
           <div class="work-name">{{ w['作品名稱'] }}</div>
           <div class="work-meta">
             <span class="work-price">{{ fmt_price(w['完工金額']) }}</span>
+            {% set ra = rmap.get(w['作品ID']) %}
+            {% if ra and ra[0] %}
+            <span style="font-size:.82rem;color:#f4b400">★ {{ ra[0] }} <span style="color:var(--gray)">({{ ra[1] }})</span></span>
+            {% else %}
             <span style="font-size:.78rem;color:var(--gray)"><i class="bi bi-images"></i> {{ w.get('照片IDs','').count(',')+1 if w.get('照片IDs') else 0 }} 張</span>
+            {% endif %}
           </div>
           {% set wtags = w.get('標籤','').split(',') %}
           <div class="work-tags">
