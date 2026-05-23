@@ -105,7 +105,8 @@ def fmt_price(val):
     except Exception:
         return str(val)
 
-app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price, is_admin=is_admin)
+app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
+                             is_admin=is_admin, current_user=current_user)
 
 # ── Drive upload ──────────────────────────────────────────────
 def upload_photos(files, work_id):
