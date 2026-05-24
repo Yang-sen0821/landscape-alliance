@@ -380,6 +380,10 @@ def admin_work(work_id):
     return render_template('admin/work_edit.html', work=work,
                            photos=photos, tags=tags)
 
+@app.route('/platform')
+def platform():
+    return render_template('public/platform.html')
+
 @app.errorhandler(403)
 def e403(e):
     return render_template('error.html', code=403, msg='沒有權限'), 403

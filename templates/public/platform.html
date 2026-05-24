@@ -1,0 +1,774 @@
+{% extends "base.html" %}
+{% block title %}台灣景觀聯盟平台計畫書{% endblock %}
+
+{% block head %}
+<style>
+/* ── Platform Page Styles ── */
+.pt-hero {
+  background: linear-gradient(135deg, var(--g900) 0%, #1a3a2a 50%, var(--g700) 100%);
+  color: #fff;
+  padding: 100px 0 80px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.pt-hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 30% 50%, rgba(82,183,136,.18) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 50%, rgba(149,213,178,.10) 0%, transparent 60%);
+}
+.pt-hero-inner { position: relative; z-index: 1; }
+.pt-badge {
+  display: inline-block;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 30px;
+  padding: 6px 18px;
+  font-size: .82rem;
+  font-weight: 600;
+  letter-spacing: .05em;
+  color: var(--g300);
+  margin-bottom: 24px;
+}
+.pt-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 20px;
+}
+.pt-hero h1 span { color: var(--g300); }
+.pt-hero p {
+  font-size: 1.15rem;
+  color: rgba(255,255,255,.75);
+  max-width: 640px;
+  margin: 0 auto 40px;
+  line-height: 1.7;
+}
+.pt-hero-stats {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+.pt-stat-num { font-size: 2.2rem; font-weight: 700; color: var(--g300); display: block; }
+.pt-stat-label { font-size: .82rem; color: rgba(255,255,255,.6); margin-top: 2px; display: block; }
+
+/* ── Section styles ── */
+.pt-section { padding: 80px 0; }
+.pt-section:nth-child(even) { background: #fff; }
+.pt-section-header { text-align: center; margin-bottom: 56px; }
+.pt-section-tag {
+  display: inline-block;
+  background: var(--g100);
+  color: var(--g700);
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin-bottom: 14px;
+}
+.pt-section-header h2 {
+  font-size: clamp(1.5rem, 3.5vw, 2.2rem);
+  font-weight: 700;
+  color: var(--g900);
+  margin-bottom: 12px;
+}
+.pt-section-header p { color: var(--gray); font-size: 1rem; max-width: 580px; margin: 0 auto; }
+
+/* ── Opportunity block ── */
+.pt-opportunity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+}
+.pt-opp-card {
+  background: var(--g50);
+  border: 1.5px solid var(--g100);
+  border-radius: 16px;
+  padding: 28px 24px;
+}
+.pt-opp-icon {
+  width: 48px; height: 48px;
+  background: var(--g100);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem;
+  margin-bottom: 16px;
+}
+.pt-opp-card h3 { font-size: 1.05rem; font-weight: 700; color: var(--g900); margin-bottom: 8px; }
+.pt-opp-card p { font-size: .9rem; color: var(--gray); line-height: 1.6; }
+
+/* ── 10-Step flow ── */
+.pt-steps { display: flex; flex-direction: column; gap: 0; max-width: 860px; margin: 0 auto; }
+.pt-step {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 0 24px;
+  position: relative;
+}
+.pt-step-left { display: flex; flex-direction: column; align-items: center; }
+.pt-step-num {
+  width: 56px; height: 56px;
+  background: var(--g700);
+  color: #fff;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; font-weight: 700;
+  flex-shrink: 0;
+  z-index: 1;
+}
+.pt-step-line {
+  width: 2px;
+  flex: 1;
+  background: var(--g100);
+  margin: 6px 0;
+  min-height: 28px;
+}
+.pt-step:last-child .pt-step-line { display: none; }
+.pt-step-body {
+  padding: 10px 0 32px;
+}
+.pt-step-body h3 { font-size: 1rem; font-weight: 700; color: var(--g900); margin-bottom: 6px; }
+.pt-step-body p { font-size: .88rem; color: var(--gray); line-height: 1.6; }
+.pt-step-note {
+  display: inline-block;
+  margin-top: 8px;
+  background: var(--g100);
+  color: var(--g700);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+/* ── Supplier cards ── */
+.pt-supplier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+.pt-supplier-card {
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 20px;
+  text-align: center;
+  transition: .2s;
+}
+.pt-supplier-card:hover { border-color: var(--g500); box-shadow: 0 4px 20px rgba(82,183,136,.15); }
+.pt-supplier-avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--g100);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.6rem;
+  margin: 0 auto 14px;
+}
+.pt-supplier-card h3 { font-size: .95rem; font-weight: 700; color: var(--g900); margin-bottom: 6px; }
+.pt-supplier-card p { font-size: .82rem; color: var(--gray); line-height: 1.5; }
+.pt-supplier-tag {
+  display: inline-block;
+  margin-top: 10px;
+  background: var(--g50);
+  border: 1px solid var(--g300);
+  color: var(--g700);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+/* ── Revenue streams ── */
+.pt-revenue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+.pt-revenue-card {
+  background: #fff;
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  padding: 24px;
+  display: flex; gap: 16px; align-items: flex-start;
+}
+.pt-revenue-icon {
+  width: 44px; height: 44px;
+  background: var(--g100);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.pt-revenue-card h3 { font-size: .95rem; font-weight: 700; color: var(--g900); margin-bottom: 4px; }
+.pt-revenue-card p { font-size: .85rem; color: var(--gray); }
+.pt-revenue-amt { font-size: .82rem; font-weight: 700; color: var(--g700); margin-top: 6px; }
+
+/* ── Flywheel ── */
+.pt-flywheel {
+  max-width: 720px;
+  margin: 0 auto;
+  background: linear-gradient(135deg, var(--g900), var(--g700));
+  border-radius: 20px;
+  padding: 48px 40px;
+  color: #fff;
+  text-align: center;
+}
+.pt-flywheel h3 { font-size: 1.4rem; font-weight: 700; margin-bottom: 32px; }
+.pt-flywheel-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.pt-fw-step {
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(255,255,255,.1);
+  border-radius: 12px;
+  padding: 12px 18px;
+  text-align: left;
+}
+.pt-fw-num {
+  width: 28px; height: 28px;
+  background: var(--g300);
+  color: var(--g900);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.pt-fw-step p { font-size: .88rem; color: rgba(255,255,255,.9); }
+
+/* ── Roadmap ── */
+.pt-phases {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+.pt-phase-card {
+  border-radius: 16px;
+  padding: 28px 24px;
+}
+.pt-phase-card.p1 { background: var(--g50); border: 2px solid var(--g300); }
+.pt-phase-card.p2 { background: #fff; border: 1.5px solid var(--border); }
+.pt-phase-card.p3 { background: #fff; border: 1.5px solid var(--border); }
+.pt-phase-label {
+  font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+  color: var(--g700); margin-bottom: 8px;
+}
+.pt-phase-card h3 { font-size: 1.05rem; font-weight: 700; color: var(--g900); margin-bottom: 16px; }
+.pt-phase-items { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.pt-phase-items li {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: .88rem; color: var(--gray);
+}
+.pt-phase-items li::before {
+  content: '✓';
+  color: var(--g500);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── Investor section ── */
+.pt-invest {
+  background: var(--g900);
+  color: #fff;
+  border-radius: 20px;
+  padding: 56px 48px;
+  margin: 0 20px;
+}
+.pt-invest h2 { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
+.pt-invest > p { color: rgba(255,255,255,.65); margin-bottom: 40px; }
+.pt-invest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+.pt-invest-item h4 { font-size: .82rem; color: rgba(255,255,255,.5); font-weight: 600; letter-spacing: .06em; margin-bottom: 8px; }
+.pt-invest-item p { font-size: .95rem; color: rgba(255,255,255,.9); line-height: 1.6; }
+.pt-invest-cta {
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+.pt-btn-white {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #fff; color: var(--g900);
+  padding: 12px 24px; border-radius: 10px;
+  font-weight: 700; font-size: .95rem;
+  transition: .15s;
+  text-decoration: none;
+}
+.pt-btn-white:hover { background: var(--g100); color: var(--g900); }
+.pt-btn-outline-white {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: transparent; color: #fff;
+  border: 1.5px solid rgba(255,255,255,.4);
+  padding: 12px 24px; border-radius: 10px;
+  font-weight: 600; font-size: .95rem;
+  transition: .15s;
+  text-decoration: none;
+}
+.pt-btn-outline-white:hover { border-color: #fff; color: #fff; }
+
+/* ── Photo placeholder ── */
+.pt-photo-ph {
+  background: var(--g100);
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--g500);
+  font-size: .82rem;
+  gap: 8px;
+  font-weight: 600;
+}
+
+/* ── Showcase grid ── */
+.pt-showcase {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-rows: 240px 200px;
+  gap: 12px;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.pt-showcase-item { border-radius: 12px; overflow: hidden; }
+.pt-showcase-item:first-child { grid-row: 1 / 3; }
+
+@media(max-width:640px) {
+  .pt-hero { padding: 64px 0 56px; }
+  .pt-hero-stats { gap: 28px; }
+  .pt-invest { padding: 36px 24px; margin: 0 0; border-radius: 0; }
+  .pt-showcase { grid-template-columns: 1fr 1fr; grid-template-rows: auto; }
+  .pt-showcase-item:first-child { grid-row: auto; grid-column: 1/-1; height: 200px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── HERO ── -->
+<div class="pt-hero">
+  <div class="container pt-hero-inner">
+    <div class="pt-badge">🌿 景觀聯盟平台計畫 2026</div>
+    <h1>讓業主<span>自己設計</span>夢想庭院<br>平台媒合，一鍵施工</h1>
+    <p>台灣第一個景觀自助設計 × 施工媒合平台。<br>
+    業主選植物、選家具、AI 生成預覽，聯盟夥伴競標接案。</p>
+    <div class="pt-hero-stats">
+      <div>
+        <span class="pt-stat-num">60+</span>
+        <span class="pt-stat-label">聯盟現有夥伴</span>
+      </div>
+      <div>
+        <span class="pt-stat-num">NT$60k–200k</span>
+        <span class="pt-stat-label">平均每案客單價</span>
+      </div>
+      <div>
+        <span class="pt-stat-num">全台</span>
+        <span class="pt-stat-label">南北覆蓋+馬來西亞</span>
+      </div>
+      <div>
+        <span class="pt-stat-num">$0</span>
+        <span class="pt-stat-label">重新建供應商體系的成本</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 市場機會 ── -->
+<div class="pt-section">
+  <div class="container">
+    <div class="pt-section-header">
+      <div class="pt-section-tag">MARKET OPPORTUNITY</div>
+      <h2>為什麼現在是時候？</h2>
+      <p>三個結構性機會同時成熟，這個市場從來沒有被真正數位化過</p>
+    </div>
+    <div class="pt-opportunity-grid">
+      <div class="pt-opp-card">
+        <div class="pt-opp-icon">🏠</div>
+        <h3>屋主沒有想像力</h3>
+        <p>90% 的業主放棄景觀，不是因為沒有預算，是因為不知道自己家能變成什麼樣子。視覺化工具是唯一解法。</p>
+      </div>
+      <div class="pt-opp-card">
+        <div class="pt-opp-icon">🔗</div>
+        <h3>供應鏈零碎，無人整合</h3>
+        <p>植物、盆器、戶外家具、施工——業主要找四個不同的廠商，資訊不對稱，容易被坑。整合平台是剛需。</p>
+      </div>
+      <div class="pt-opp-card">
+        <div class="pt-opp-icon">🤖</div>
+        <h3>AI 讓門檻消失</h3>
+        <p>過去業主需要花錢請設計師才能看到效果圖。現在 AI 讓這件事免費化、即時化，大幅降低成交門檻。</p>
+      </div>
+      <div class="pt-opp-card">
+        <div class="pt-opp-icon">🌏</div>
+        <h3>東南亞空白市場</h3>
+        <p>聯盟已有馬來西亞成員，同樣的商模可以授權複製，台灣驗證完就是東南亞的基礎設施。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 10步驟流程 ── -->
+<div class="pt-section">
+  <div class="container">
+    <div class="pt-section-header">
+      <div class="pt-section-tag">USER FLOW</div>
+      <h2>業主到完工，10 個步驟</h2>
+      <p>從上傳照片到施工評分，全程在平台上完成，透明、可追蹤</p>
+    </div>
+    <div class="pt-steps">
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">1</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>上傳案場照片 + 輸入長寬</h3>
+          <p>業主拍下自家陽台、庭院、屋頂，輸入實際尺寸。系統以此為設計底圖。</p>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">2</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>選風格 TAG</h3>
+          <p>日式禪意、現代極簡、熱帶叢林、鄉村田園⋯⋯隨著 TAG 即時篩選，系統自動呈現對應色系的植物、盆器與家具組合。</p>
+          <span class="pt-step-note">標籤即提示詞——選越精準，AI 生成效果越好</span>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">3</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>選元素 + AI 生成模擬圖</h3>
+          <p>從聯盟供應商商品庫選植物、盆器、戶外家具，系統將產品照合成到案場底圖，即時預覽效果。業主可多次調整直到滿意。</p>
+          <span class="pt-step-note">Phase 1：照片合成（成本近零）／Phase 3：Stable Diffusion 渲染升級</span>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">4</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>確認設計 → 填詢價表單</h3>
+          <p>業主按下確認，系統自動生成材料清單（BOM）含每項產品單價，業主填入地址、預算、時程需求。</p>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">5</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>自動媒合聯盟夥伴</h3>
+          <p>系統依案場地區 + 工程類型，自動通知符合條件的聯盟夥伴。夥伴收到業主設計圖 + BOM + 預算，評估是否投標。</p>
+          <span class="pt-step-note">夥伴需建檔：服務縣市 / 專長 / 最小接案金額</span>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">6</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>夥伴競標報價</h3>
+          <p>有意接單的夥伴填入施工費用，送出最終總報價。業主可收到多份報價單比較，選擇最適合的夥伴。</p>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">7</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>敲定施工日</h3>
+          <p>業主選定夥伴後，雙方在平台上確認施工日期，系統發出確認通知。</p>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">8</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>施工監管系統</h3>
+          <p>夥伴登入後台，按格式上傳施工前、施工中、完工三階段照片與記錄。系統自動生成完工報告 PDF 給業主留存。</p>
+          <span class="pt-step-note">完工報告可用於管委會報備、政府補助申請、房屋貸款</span>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">9</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>雙向評分系統</h3>
+          <p>業主評分夥伴（施工品質、溝通、守時），夥伴評分業主（配合度、付款效率）。類 Uber 雙向信任機制。</p>
+        </div>
+      </div>
+
+      <div class="pt-step">
+        <div class="pt-step-left">
+          <div class="pt-step-num">10</div>
+          <div class="pt-step-line"></div>
+        </div>
+        <div class="pt-step-body">
+          <h3>數據回流 × 業主分享</h3>
+          <p>完工案例上架平台，業主在社群分享「我自己設計的庭院」，帶來免費流量。平台數據開始累積護城河。</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── 供應商生態系 ── -->
+<div class="pt-section">
+  <div class="container">
+    <div class="pt-section-header">
+      <div class="pt-section-tag">ECOSYSTEM</div>
+      <h2>供應鏈已就位，等的是前台</h2>
+      <p>所有角色都已在景觀聯盟中，不需要從零招商</p>
+    </div>
+    <div class="pt-supplier-grid">
+      <div class="pt-supplier-card">
+        <div class="pt-supplier-avatar">🛋️</div>
+        <h3>大綠地戶外家具</h3>
+        <p>戶外柚木桌椅、遮陽傘、休閒家具系列，負責人已在聯盟</p>
+        <span class="pt-supplier-tag">戶外家具</span>
+      </div>
+      <div class="pt-supplier-card">
+        <div class="pt-supplier-avatar">🪴</div>
+        <h3>1% 植物</h3>
+        <p>高端植物養護品牌，水溶液肥料、驅蟲噴霧，VOGUE 合作品牌</p>
+        <span class="pt-supplier-tag">植物養護</span>
+      </div>
+      <div class="pt-supplier-card">
+        <div class="pt-supplier-avatar">🏺</div>
+        <h3>Key 花盆製造</h3>
+        <p>馬來西亞 FRP 玻璃纖維花盆製造商，比陶瓷輕，適合屋頂花園</p>
+        <span class="pt-supplier-tag">盆器 · 馬來西亞</span>
+      </div>
+      <div class="pt-supplier-card">
+        <div class="pt-supplier-avatar">🌿</div>
+        <h3>竹香園</h3>
+        <p>景觀養護訂閱服務，定期維護，全台多店，完工後最佳養護夥伴</p>
+        <span class="pt-supplier-tag">定期養護</span>
+      </div>
+      <div class="pt-supplier-card">
+        <div class="pt-supplier-avatar">🏗️</div>
+        <h3>聯盟 60+ 施工夥伴</h3>
+        <p>景觀設計師、施工團隊遍布全台，南北覆蓋，跨縣市人力互援</p>
+        <span class="pt-supplier-tag">設計 · 施工</span>
+      </div>
+      <div class="pt-supplier-card">
+        <div class="pt-supplier-avatar">💧</div>
+        <h3>更多夥伴加入中</h3>
+        <p>水景設備、燈具照明、仿生植栽、塑形水泥⋯⋯生態系持續擴大</p>
+        <span class="pt-supplier-tag">開放加入</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 商業模式 ── -->
+<div class="pt-section">
+  <div class="container">
+    <div class="pt-section-header">
+      <div class="pt-section-tag">BUSINESS MODEL</div>
+      <h2>六條收入來源，不依賴單一模式</h2>
+      <p>每筆施工案平台分潤 NT$10,000–35,000，養護訂閱是長尾現金流</p>
+    </div>
+    <div class="pt-revenue-grid">
+      <div class="pt-revenue-card">
+        <div class="pt-revenue-icon">💰</div>
+        <div>
+          <h3>材料交易抽成</h3>
+          <p>BOM 自動連結供應商下單，平台抽 5–8%</p>
+          <div class="pt-revenue-amt">每案 NT$3,000–12,000</div>
+        </div>
+      </div>
+      <div class="pt-revenue-card">
+        <div class="pt-revenue-icon">🤝</div>
+        <div>
+          <h3>施工媒合協調費</h3>
+          <p>成交施工案抽 10–15%，無媒合不收費</p>
+          <div class="pt-revenue-amt">每案 NT$6,000–25,000</div>
+        </div>
+      </div>
+      <div class="pt-revenue-card">
+        <div class="pt-revenue-icon">📬</div>
+        <div>
+          <h3>夥伴線索訂閱</h3>
+          <p>每月付固定費，換取平台將詢問直接轉發</p>
+          <div class="pt-revenue-amt">NT$500–2,000 / 月 / 夥伴</div>
+        </div>
+      </div>
+      <div class="pt-revenue-card">
+        <div class="pt-revenue-icon">🔁</div>
+        <div>
+          <h3>養護訂閱媒合</h3>
+          <p>完工後自動觸發，業主每月付 NT$800–3,000</p>
+          <div class="pt-revenue-amt">高留存，重複性現金流</div>
+        </div>
+      </div>
+      <div class="pt-revenue-card">
+        <div class="pt-revenue-icon">📊</div>
+        <div>
+          <h3>數據報告</h3>
+          <p>熱門風格 / 材料需求情報，賣給供應商做進貨決策</p>
+          <div class="pt-revenue-amt">訂閱制，季度報告</div>
+        </div>
+      </div>
+      <div class="pt-revenue-card">
+        <div class="pt-revenue-icon">🌏</div>
+        <div>
+          <h3>東南亞授權</h3>
+          <p>台灣驗證完整後，平台模式授權馬來西亞等市場</p>
+          <div class="pt-revenue-amt">授權金 + 流水抽成</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 飛輪 ── -->
+<div class="pt-section">
+  <div class="container" style="display:flex;justify-content:center;">
+    <div class="pt-flywheel">
+      <h3>🔄 平台飛輪</h3>
+      <div class="pt-flywheel-steps">
+        <div class="pt-fw-step"><div class="pt-fw-num">1</div><p>業主自己設計 → 情感投入高 → 成交率高</p></div>
+        <div class="pt-fw-step"><div class="pt-fw-num">2</div><p>完工照回流平台 → 案例庫越來越豐富</p></div>
+        <div class="pt-fw-step"><div class="pt-fw-num">3</div><p>業主在社群分享「我設計的空間」→ 免費病毒傳播</p></div>
+        <div class="pt-fw-step"><div class="pt-fw-num">4</div><p>更多業主進來 → 更多 TAG 資料 → AI 生圖越精準</p></div>
+        <div class="pt-fw-step"><div class="pt-fw-num">5</div><p>更多案例 → 更多設計師 / 施工商加入 → 媒合更快</p></div>
+        <div class="pt-fw-step"><div class="pt-fw-num">↺</div><p>回到步驟 1，飛輪加速</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 建置路線圖 ── -->
+<div class="pt-section">
+  <div class="container">
+    <div class="pt-section-header">
+      <div class="pt-section-tag">ROADMAP</div>
+      <h2>三個階段，分步落地</h2>
+      <p>Phase 1 幾乎零成本啟動，驗證需求後再投入技術資源</p>
+    </div>
+    <div class="pt-phases">
+      <div class="pt-phase-card p1">
+        <div class="pt-phase-label">▶ PHASE 1 — 現在可以做</div>
+        <h3>基礎媒合引擎</h3>
+        <ul class="pt-phase-items">
+          <li>TAG 篩選 + 即時照片合成預覽（成本近零）</li>
+          <li>供應商商品庫建置（植物 / 盆器 / 家具）</li>
+          <li>夥伴建檔系統（服務地區 / 專長 / 報價）</li>
+          <li>詢價表單 + 手動媒合（人工操作驗證流程）</li>
+          <li>聯盟現有案例全部上架</li>
+        </ul>
+      </div>
+      <div class="pt-phase-card p2">
+        <div class="pt-phase-label">⏳ PHASE 2 — 流量穩定後</div>
+        <h3>自動化與信任機制</h3>
+        <ul class="pt-phase-items">
+          <li>自動競標報價系統</li>
+          <li>施工監管後台（三階段照片 + 自動完工報告）</li>
+          <li>雙向評分系統（業主評夥伴 / 夥伴評業主）</li>
+          <li>材料 BOM 自動產生 + 連結供應商下單</li>
+          <li>養護訂閱觸發流程</li>
+        </ul>
+      </div>
+      <div class="pt-phase-card p3">
+        <div class="pt-phase-label">🚀 PHASE 3 — 數據夠厚後</div>
+        <h3>AI 升級與規模化</h3>
+        <ul class="pt-phase-items">
+          <li>Stable Diffusion 效果渲染（更逼真的生圖）</li>
+          <li>數據變現：導流銀行 / 供應商情報報告</li>
+          <li>「景觀聯盟認證施工商」培訓體系</li>
+          <li>東南亞授權擴張評估（馬來西亞為首站）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 投資人區 ── -->
+<div class="pt-section" style="background:var(--g50);padding-bottom:0;">
+  <div class="container">
+    <div class="pt-invest">
+      <h2>為什麼這個值得投？</h2>
+      <p>供應鏈已就位、需求端已驗證、創辦人三位一體優勢</p>
+      <div class="pt-invest-grid">
+        <div class="pt-invest-item">
+          <h4>供應鏈護城河</h4>
+          <p>60+ 聯盟成員即為第一批供應商，不需要重新招商，競爭者無法複製這個網絡。</p>
+        </div>
+        <div class="pt-invest-item">
+          <h4>需求端已驗證</h4>
+          <p>景觀聯盟已有真實業主詢問與成交案例，平台是在現有需求上加速，不是從零創造需求。</p>
+        </div>
+        <div class="pt-invest-item">
+          <h4>數據護城河</h4>
+          <p>真實完工案例 + 標籤庫是競爭者沒有的。就算用同樣 AI 模型，沒有景觀行業深度資料，生出來的圖就是沒有說服力。</p>
+        </div>
+        <div class="pt-invest-item">
+          <h4>創辦人三位一體</h4>
+          <p>楊森同時是景觀從業者（18年）、AI 整合先驅（BNI AI 系統建置者）、聯盟召集人（60+ 成員），三個角色缺一不可。</p>
+        </div>
+        <div class="pt-invest-item">
+          <h4>高客單價，高分潤</h4>
+          <p>每案客單價 NT$60,000–200,000，平台每案分潤 NT$10,000–35,000，不依賴高頻低值訂單。</p>
+        </div>
+        <div class="pt-invest-item">
+          <h4>東南亞出口路徑</h4>
+          <p>馬來西亞夥伴（Key）已在生態系中，台灣驗證完整後是清晰的東南亞授權路徑。</p>
+        </div>
+      </div>
+      <div class="pt-invest-cta">
+        <a href="{{ url_for('contact') }}" class="pt-btn-white">
+          <i class="bi bi-envelope-fill"></i> 聯繫我們談合作
+        </a>
+        <a href="{{ url_for('works') }}" class="pt-btn-outline-white">
+          <i class="bi bi-grid"></i> 瀏覽聯盟作品案例
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 聯盟夥伴 CTA ── -->
+<div class="pt-section" style="text-align:center;background:var(--g50);">
+  <div class="container">
+    <div class="pt-section-tag">加入我們</div>
+    <h2 style="font-size:1.8rem;font-weight:700;color:var(--g900);margin:12px 0 12px;">景觀聯盟夥伴，是這個平台的第一批受益者</h2>
+    <p style="color:var(--gray);max-width:520px;margin:0 auto 32px;">你的每一個完工案例，都是平台的廣告素材。<br>你的每一個客戶，都是平台下一個業主的見證。</p>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap;">
+      <a href="{{ url_for('register') }}" class="btn btn-primary">
+        <i class="bi bi-person-plus"></i> 加入成為夥伴
+      </a>
+      <a href="{{ url_for('contact') }}" class="btn btn-outline">
+        <i class="bi bi-chat-dots"></i> 了解更多
+      </a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
