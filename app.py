@@ -384,6 +384,10 @@ def admin_work(work_id):
 def platform():
     return render_template('public/platform.html')
 
+@app.route('/platform/investor')
+def platform_investor():
+    return render_template('public/platform_investor.html')
+
 @app.errorhandler(403)
 def e403(e):
     return render_template('error.html', code=403, msg='沒有權限'), 403
