@@ -92,15 +92,26 @@
       <div class="nav-links">
         <a href="{{ url_for('works') }}" class="nav-hide">瀏覽作品</a>
         <a href="{{ url_for('contact') }}" class="nav-hide">聯絡我們</a>
+
+        {% if current_supplier() %}
+          <a href="{{ url_for('supplier_upload') }}" class="nav-hide">上傳素材</a>
+          <a href="{{ url_for('supplier_materials') }}" class="nav-hide">我的素材</a>
+          <a href="{{ url_for('supplier_logout') }}" class="nav-hide" style="color:var(--gray)">登出供應商</a>
+        {% endif %}
+
         {% if current_user() %}
           {% if is_admin() %}
           <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
           {% else %}
           <a href="{{ url_for('upload') }}">上傳作品</a>
+          <a href="{{ url_for('my_profile') }}" class="nav-hide">公司資料</a>
           <a href="{{ url_for('my_works') }}" class="nav-hide">我的作品</a>
           {% endif %}
           <a href="{{ url_for('logout') }}" class="nav-hide">登出</a>
         {% else %}
+          {% if not current_supplier() %}
+          <a href="{{ url_for('supplier_login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">供應商入口</a>
+          {% endif %}
           <a href="{{ url_for('login') }}">登入</a>
           <a href="{{ url_for('register') }}" class="btn-nav">加入聯盟</a>
         {% endif %}

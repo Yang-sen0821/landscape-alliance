@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block title %}上傳素材 — 供應商後台{% endblock %}
+{% block head %}
+<style>
+  .sup-header{background:linear-gradient(135deg,var(--g900),var(--g700));color:#fff;padding:32px 0 28px}
+  .sup-header h1{font-size:1.4rem;font-weight:700}
+  .upload-zone{border:2px dashed var(--g300);border-radius:12px;padding:32px;text-align:center;cursor:pointer;transition:.15s;background:var(--g50)}
+  .upload-zone:hover,.upload-zone.drag{border-color:var(--g500);background:var(--g100)}
+  .preview-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .preview-img{width:80px;height:60px;object-fit:cover;border-radius:6px}
+  .cat-title{font-size:.78rem;font-weight:700;color:var(--gray);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;margin-top:16px}
+  .tag-grid{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:4px}
+  .tag-pill{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:.82rem;font-weight:500;cursor:pointer;transition:.15s;color:var(--text);font-family:inherit}
+  .tag-pill:hover{border-color:var(--g500);color:var(--g700)}
+  .tag-pill.selected{background:var(--g700);color:#fff;border-color:var(--g700)}
+  .sel-hint{font-size:.8rem;color:var(--gray);margin-top:6px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="sup-header">
+  <div class="container">
+    <h1>上傳素材</h1>
+    <p style="opacity:.82;margin-top:4px;font-size:.9rem">{{ session.get('supplier_company','') }} &nbsp;·&nbsp; <a href="{{ url_for('supplier_materials') }}" style="color:rgba(255,255,255,.7)">查看我的素材</a></p>
+  </div>
+</div>
+
+<div class="container" style="max-width:680px;padding-top:36px">
+  <div class="card" style="padding:32px">
+    <form method="post" enctype="multipart/form-data">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group" style="margin:0">
+          <label>素材名稱 *</label>
+          <input class="form-control" name="name" required placeholder="例：柚木戶外餐桌 4人組">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>品牌/廠牌</label>
+          <input class="form-control" name="brand" placeholder="例：大綠地 Outdoors">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px;margin-top:16px">
+        <div class="form-group" style="margin:0">
+          <label>規格尺寸 *</label>
+          <input class="form-control" name="spec" required placeholder="例：180×90×75cm">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>單位 *</label>
+          <select class="form-control" name="unit" required>
+            <option value="">選擇</option>
+            <option value="組">組</option>
+            <option value="個">個</option>
+            <option value="張">張</option>
+            <option value="坪">坪</option>
+            <option value="m²">m²</option>
+            <option value="才">才</option>
+            <option value="公尺">公尺</option>
+            <option value="棵">棵</option>
+            <option value="盆">盆</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>零售價（NT$）*</label>
+          <input class="form-control" name="price" required type="number" min="0" placeholder="12000">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:24px">
+        <label>產品標籤</label>
+        <p style="font-size:.82rem;color:var(--gray);margin-bottom:10px">選擇適合此素材的標籤，協助設計師更容易找到您的產品</p>
+        <input type="hidden" name="tags" id="tags-hidden">
+        {% for cat, items in master_tags.items() %}
+        <div class="cat-title">{{ cat }}</div>
+        <div class="tag-grid">
+          {% for tag in items %}
+          <button type="button" class="tag-pill" data-tag="{{ tag }}" onclick="toggleTag(this)">{{ tag }}</button>
+          {% endfor %}
+        </div>
+        {% endfor %}
+        <div class="sel-hint" id="sel-hint">尚未選擇標籤</div>
+      </div>
+
+      <div class="form-group" style="margin-top:24px">
+        <label>產品圖片（建議 3–6 張）</label>
+        <div class="upload-zone" onclick="document.getElementById('photo-input').click()" id="drop-zone">
+          <i class="bi bi-images" style="font-size:2rem;color:var(--g500)"></i>
+          <p style="margin-top:8px;color:var(--gray)">點此選擇或拖曳圖片</p>
+          <p style="font-size:.8rem;color:var(--gray)">JPG / PNG，建議含多角度與實際使用情境</p>
+        </div>
+        <input type="file" id="photo-input" name="photos" multiple accept="image/*" style="display:none" onchange="previewPhotos(this)">
+        <div class="preview-grid" id="preview-grid"></div>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:13px;margin-top:8px">
+        <i class="bi bi-cloud-upload"></i> 送出等待審核
+      </button>
+      <p style="font-size:.8rem;color:var(--gray);text-align:center;margin-top:12px">審核通過後即在平台公開展示，通常 1–3 個工作天</p>
+    </form>
+  </div>
+</div>
+
+<script>
+const selectedTags = new Set();
+
+function toggleTag(btn) {
+  const tag = btn.dataset.tag;
+  if (selectedTags.has(tag)) {
+    selectedTags.delete(tag);
+    btn.classList.remove('selected');
+  } else {
+    selectedTags.add(tag);
+    btn.classList.add('selected');
+  }
+  document.getElementById('tags-hidden').value = Array.from(selectedTags).join(',');
+  const n = selectedTags.size;
+  document.getElementById('sel-hint').textContent = n ? `已選擇 ${n} 個標籤` : '尚未選擇標籤';
+}
+
+function previewPhotos(input) {
+  const grid = document.getElementById('preview-grid');
+  grid.innerHTML = '';
+  Array.from(input.files).forEach(f => {
+    const img = document.createElement('img');
+    img.className = 'preview-img';
+    img.src = URL.createObjectURL(f);
+    grid.appendChild(img);
+  });
+}
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const inp = document.getElementById('photo-input');
+  inp.files = e.dataTransfer.files;
+  previewPhotos(inp);
+});
+</script>
+{% endblock %}

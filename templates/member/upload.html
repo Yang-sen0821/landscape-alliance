@@ -6,41 +6,51 @@
   .upload-zone:hover,.upload-zone.drag{border-color:var(--g500);background:var(--g100)}
   .preview-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
   .preview-img{width:80px;height:60px;object-fit:cover;border-radius:6px}
-  .tag-suggest{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  .tag-chip{padding:4px 12px;border-radius:20px;border:1.5px solid var(--border);font-size:.8rem;cursor:pointer;transition:.15s;background:#fff;color:var(--gray)}
-  .tag-chip:hover{border-color:var(--g500);color:var(--g700)}
+  .cat-title{font-size:.78rem;font-weight:700;color:var(--gray);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;margin-top:16px}
+  .tag-grid{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:4px}
+  .tag-pill{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:.82rem;font-weight:500;cursor:pointer;transition:.15s;color:var(--text);font-family:inherit}
+  .tag-pill:hover{border-color:var(--g500);color:var(--g700)}
+  .tag-pill.selected{background:var(--g700);color:#fff;border-color:var(--g700)}
+  .sel-hint{font-size:.8rem;color:var(--gray);margin-top:6px}
+  .scale-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end}
+  .scale-convert{padding:10px 14px;background:var(--g50);border:1.5px solid var(--border);border-radius:10px;font-size:.9rem;color:var(--gray);font-weight:500}
 </style>
 {% endblock %}
 {% block content %}
 <div class="section">
-  <div class="container" style="max-width:580px">
+  <div class="container" style="max-width:620px">
     <div class="section-title">上傳作品</div>
     <p class="section-sub">上傳後由管理員審核，通過後公開展示</p>
     <div class="card" style="padding:32px">
       <form method="post" enctype="multipart/form-data">
+
         <div class="form-group">
           <label>作品名稱 *</label>
           <input class="form-control" name="name" required placeholder="例：台南永康區 日式庭院 30坪">
         </div>
 
         <div class="form-group">
-          <label>照片 *（可多選，建議 3-8 張）</label>
+          <label>照片 *（可多選，建議 3–8 張）</label>
           <div class="upload-zone" onclick="document.getElementById('photo-input').click()" id="drop-zone">
             <i class="bi bi-cloud-upload" style="font-size:2rem;color:var(--g500)"></i>
             <p style="margin-top:8px;color:var(--gray)">點此選擇或拖曳圖片</p>
             <p style="font-size:.8rem;color:var(--gray)">JPG / PNG，單檔上限 10MB</p>
           </div>
-          <input type="file" id="photo-input" name="photos" multiple accept="image/*" style="display:none" onchange="previewPhotos(this)">
+          <input type="file" id="photo-input" name="photos" multiple accept="image/*"
+                 style="display:none" onchange="previewPhotos(this)">
           <div class="preview-grid" id="preview-grid"></div>
         </div>
 
         <div class="form-group">
-          <label>標籤（用逗號分隔）</label>
-          <input class="form-control" name="tags" id="tags-input" placeholder="例：日式,庭院,水景,石材">
-          <div class="tag-suggest">
-            {% for t in ['陽台','庭院','屋頂花園','室內綠化','商業空間','植生牆','仿生植物','水景','石材','日式','現代','熱帶風'] %}
-            <span class="tag-chip" onclick="addTag('{{ t }}')">+ {{ t }}</span>
-            {% endfor %}
+          <label>案場規模 *</label>
+          <div class="scale-row">
+            <div>
+              <input class="form-control" name="scale" id="scale-input" type="number"
+                     min="0" step="0.5" required placeholder="坪數（坪）"
+                     oninput="convertScale(this.value)">
+              <p style="font-size:.78rem;color:var(--gray);margin-top:4px">填入坪數，自動換算 m²</p>
+            </div>
+            <div class="scale-convert" id="scale-m2">— m²</div>
           </div>
         </div>
 
@@ -49,7 +59,23 @@
           <input class="form-control" name="price" type="number" placeholder="例：150000" min="0">
         </div>
 
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:13px">
+        <div class="form-group">
+          <label>作品標籤</label>
+          <p style="font-size:.82rem;color:var(--gray);margin-bottom:10px">選擇適合此作品的標籤，讓客戶更容易找到您的作品</p>
+          <input type="hidden" name="tags" id="tags-hidden">
+          {% for cat, items in master_tags.items() %}
+          <div class="cat-title">{{ cat }}</div>
+          <div class="tag-grid">
+            {% for tag in items %}
+            <button type="button" class="tag-pill" data-tag="{{ tag }}" onclick="toggleTag(this)">{{ tag }}</button>
+            {% endfor %}
+          </div>
+          {% endfor %}
+          <div class="sel-hint" id="sel-hint">尚未選擇標籤</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary"
+                style="width:100%;justify-content:center;padding:13px;margin-top:8px">
           <i class="bi bi-cloud-upload"></i> 送出等待審核
         </button>
       </form>
@@ -59,7 +85,31 @@
     </p>
   </div>
 </div>
+
 <script>
+const selectedTags = new Set();
+
+function toggleTag(btn) {
+  const tag = btn.dataset.tag;
+  if (selectedTags.has(tag)) {
+    selectedTags.delete(tag);
+    btn.classList.remove('selected');
+  } else {
+    selectedTags.add(tag);
+    btn.classList.add('selected');
+  }
+  document.getElementById('tags-hidden').value = Array.from(selectedTags).join(',');
+  const n = selectedTags.size;
+  document.getElementById('sel-hint').textContent = n ? `已選擇 ${n} 個標籤` : '尚未選擇標籤';
+}
+
+function convertScale(val) {
+  const el = document.getElementById('scale-m2');
+  const n = parseFloat(val);
+  if (!val || isNaN(n)) { el.textContent = '— m²'; return; }
+  el.textContent = (n * 3.305785).toFixed(1) + ' m²';
+}
+
 function previewPhotos(input) {
   const grid = document.getElementById('preview-grid');
   grid.innerHTML = '';
@@ -70,13 +120,7 @@ function previewPhotos(input) {
     grid.appendChild(img);
   });
 }
-function addTag(t) {
-  const inp = document.getElementById('tags-input');
-  const cur = inp.value.trim();
-  if (!cur) { inp.value = t; return; }
-  const tags = cur.split(',').map(x => x.trim());
-  if (!tags.includes(t)) inp.value = [...tags, t].join(',');
-}
+
 const dz = document.getElementById('drop-zone');
 dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
 dz.addEventListener('dragleave', () => dz.classList.remove('drag'));

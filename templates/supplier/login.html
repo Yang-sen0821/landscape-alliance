@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}供應商登入 — 台灣景觀聯盟{% endblock %}
+{% block content %}
+<div class="section">
+  <div class="container" style="max-width:420px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:1.6rem;font-weight:700;color:var(--g900)">供應商後台</div>
+      <p style="color:var(--gray);margin-top:6px;font-size:.92rem">管理您的素材與上架狀態</p>
+    </div>
+    <div class="card" style="padding:32px">
+      <form method="post">
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="form-group">
+          <label>Email</label>
+          <input class="form-control" name="email" required type="email" autofocus>
+        </div>
+        <div class="form-group">
+          <label>密碼</label>
+          <input class="form-control" name="password" required type="password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:13px;margin-top:8px">
+          登入
+        </button>
+      </form>
+    </div>
+    <p style="text-align:center;margin-top:16px;font-size:.88rem;color:var(--gray)">
+      還沒有帳號？<a href="{{ url_for('supplier_register') }}">立即加入</a>
+    </p>
+    <p style="text-align:center;margin-top:8px;font-size:.82rem">
+      <a href="{{ url_for('login') }}" style="color:var(--gray)">景觀夥伴登入（另一個入口）</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

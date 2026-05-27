@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}公司資料 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .profile-header{background:linear-gradient(135deg,var(--g900),var(--g700));color:#fff;padding:32px 0 28px}
+  .profile-header h1{font-size:1.4rem;font-weight:700}
+  .county-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:8px}
+  .county-label{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:.84rem;background:#fff;transition:.15s;user-select:none}
+  .county-label:hover{border-color:var(--g500)}
+  .county-label input{accent-color:var(--g700);width:15px;height:15px;flex-shrink:0}
+  .county-label.checked{border-color:var(--g500);background:var(--g50);color:var(--g700);font-weight:600}
+</style>
+{% endblock %}
+{% block content %}
+<div class="profile-header">
+  <div class="container">
+    <h1>公司資料</h1>
+    <p style="opacity:.82;margin-top:4px;font-size:.9rem">
+      {{ member.get('公司','') }} &nbsp;·&nbsp; {{ member.get('姓名','') }}
+    </p>
+  </div>
+</div>
+
+<div class="container" style="max-width:680px;padding-top:36px;padding-bottom:48px">
+  <div class="card" style="padding:32px">
+    <form method="post">
+
+      <div class="form-group">
+        <label>公司所在縣市 *</label>
+        <select class="form-control" name="county" required>
+          <option value="">請選擇縣市</option>
+          {% for c in tw_counties %}
+          <option value="{{ c }}" {% if profile.get('所在縣市') == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>服務範圍（可複選）</label>
+        <p style="font-size:.82rem;color:var(--gray);margin-bottom:10px">勾選可承接案場的縣市，讓客戶更容易找到您</p>
+        {% set saved_areas = profile.get('服務縣市','').split(',') %}
+        <div class="county-grid" id="county-grid">
+          {% for c in tw_counties %}
+          <label class="county-label {% if c in saved_areas %}checked{% endif %}" id="lbl-{{ loop.index }}">
+            <input type="checkbox" name="service_areas" value="{{ c }}"
+                   {% if c in saved_areas %}checked{% endif %}
+                   onchange="toggleLabel(this)">
+            {{ c }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:20px">
+        <label>最小接案金額（NT$）</label>
+        <input class="form-control" name="min_amount" type="number" min="0" step="10000"
+               placeholder="例：200000（填寫後讓業主了解接案門檻）"
+               value="{{ profile.get('最小接案金額','') }}">
+      </div>
+
+      <div class="form-group">
+        <label>公司簡介</label>
+        <textarea class="form-control" name="intro" rows="4"
+                  placeholder="簡單介紹公司特色、主要服務、擅長風格...">{{ profile.get('公司簡介','') }}</textarea>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group" style="margin:0">
+          <label>LINE ID</label>
+          <input class="form-control" name="line_id" placeholder="例：musen_landscape"
+                 value="{{ profile.get('LINE ID','') }}">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>官方網站</label>
+          <input class="form-control" name="website" type="url" placeholder="https://..."
+                 value="{{ profile.get('官方網站','') }}">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary"
+              style="width:100%;justify-content:center;padding:13px;margin-top:24px">
+        <i class="bi bi-check2-circle"></i> 儲存資料
+      </button>
+    </form>
+  </div>
+
+  <div style="text-align:center;margin-top:20px;display:flex;gap:24px;justify-content:center">
+    <a href="{{ url_for('upload') }}" style="font-size:.88rem;color:var(--gray)">
+      <i class="bi bi-cloud-upload"></i> 上傳作品
+    </a>
+    <a href="{{ url_for('my_works') }}" style="font-size:.88rem;color:var(--gray)">
+      <i class="bi bi-images"></i> 我的作品
+    </a>
+  </div>
+</div>
+
+<script>
+function toggleLabel(input) {
+  input.closest('.county-label').classList.toggle('checked', input.checked);
+}
+</script>
+{% endblock %}

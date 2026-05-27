@@ -18,6 +18,17 @@ SHEET_ID        = os.environ.get('SHEET_ID', '1E76TuBWUEUw93KjOz_xgNGcTqUuDhc0Ad
 DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID', '1qCzsnVGQl6RAQprtWuh4aCMt98J59BkD')
 CONTACT_PHONE   = os.environ.get('CONTACT_PHONE', '0910-006-229')
 
+MASTER_TAGS = {
+    '設計風格': ['現代簡約', '日式禪風', '南洋熱帶', '地中海風', '自然鄉村', '工業風'],
+    '適用空間': ['前院', '後院', '中庭', '屋頂花園', '陽台', '商業空間'],
+    '植栽':     ['草坪', '喬木', '灌木', '竹子', '花卉', '水生植物', '多肉植物'],
+    '鋪面材料': ['天然石材', '木材/塑木', '磚砌', '碎石子', '混凝土'],
+    '家具設施': ['涼亭棚架', '水景噴泉', '戶外家具', '戶外照明', '圍籬圍牆', '景觀步道'],
+}
+
+SUPPLIER_HEADERS = ['供應商ID', '公司名稱', 'Email', '密碼hash', '聯絡人', '電話', '狀態', '註冊時間']
+MATERIAL_HEADERS = ['素材ID', '素材名稱', '品牌', '規格尺寸', '單位', '零售價', '照片IDs', '標籤', '供應商Email', '狀態', '上傳時間', '備註']
+
 SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive',
@@ -72,6 +83,64 @@ def admin_required(f):
             abort(403)
         return f(*a, **kw)
     return wrapped
+
+# ── Supplier helpers ───────────────────────────────────────────
+def _ensure_ws(tab, headers):
+    try:
+        return _client().open_by_key(SHEET_ID).worksheet(tab)
+    except Exception:
+        sh = _client().open_by_key(SHEET_ID)
+        ws = sh.add_worksheet(title=tab, rows=1000, cols=len(headers))
+        ws.append_row(headers)
+        return ws
+
+def _ws_supplier():
+    return _ensure_ws('供應商', ['供應商ID','公司名稱','Email','密碼hash','聯絡人','電話','狀態','註冊時間'])
+
+def _ws_material():
+    return _ensure_ws('素材', ['素材ID','素材名稱','品牌','規格尺寸','單位','零售價','照片IDs','標籤','供應商Email','狀態','上傳時間','備註'])
+
+def _ws_partner():
+    return _ensure_ws('夥伴資料', ['會員Email','所在縣市','服務縣市','最小接案金額','公司簡介','LINE ID','官方網站','更新時間'])
+
+def find_supplier(email):
+    for row in _ws_supplier().get_all_records():
+        if row.get('Email','').lower() == email.lower():
+            return row
+    return None
+
+def get_materials(supplier_email=None, status=None):
+    rows = _ws_material().get_all_records()
+    if supplier_email:
+        rows = [r for r in rows if r.get('供應商Email','').lower() == supplier_email.lower()]
+    if status:
+        rows = [r for r in rows if r.get('狀態') == status]
+    return rows
+
+def get_partner_profile(email):
+    for row in _ws_partner().get_all_records():
+        if row.get('會員Email','').lower() == email.lower():
+            return row
+    return {}
+
+def current_supplier():
+    return session.get('supplier_email')
+
+def supplier_required(f):
+    @wraps(f)
+    def wrapped(*a, **kw):
+        if not current_supplier():
+            return redirect(url_for('supplier_login', next=request.path))
+        return f(*a, **kw)
+    return wrapped
+
+TW_COUNTIES = [
+    '台北市','新北市','基隆市','桃園市','新竹市','新竹縣','宜蘭縣',
+    '苗栗縣','台中市','彰化縣','南投縣','雲林縣',
+    '嘉義市','嘉義縣','台南市','高雄市','屏東縣',
+    '花蓮縣','台東縣',
+    '澎湖縣','金門縣','連江縣（馬祖）',
+]
 
 # ── Sheet helpers ─────────────────────────────────────────────
 def get_works(status=None):
@@ -129,7 +198,10 @@ def ratings_map(works):
 
 app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
                              is_admin=is_admin, current_user=current_user,
-                             avg_rating=avg_rating)
+                             avg_rating=avg_rating,
+                             current_supplier=current_supplier,
+                             master_tags=MASTER_TAGS,
+                             tw_counties=TW_COUNTIES)
 
 # ── Drive upload ──────────────────────────────────────────────
 def upload_photos(files, work_id):
@@ -289,6 +361,7 @@ def logout():
 def upload():
     if request.method == 'POST':
         name   = request.form.get('name','').strip()
+        scale  = request.form.get('scale','').strip()
         tags   = request.form.get('tags','').strip()
         price  = request.form.get('price','').strip()
         photos = request.files.getlist('photos')
@@ -308,11 +381,36 @@ def upload():
         _ws('作品').append_row([
             work_id, name, tags, price, ','.join(fids),
             current_user(), 'pending',
-            datetime.now().strftime('%Y-%m-%d %H:%M'), ''
+            datetime.now().strftime('%Y-%m-%d %H:%M'), '', scale
         ])
         flash('上傳成功！審核通過後即公開展示', 'success')
         return redirect(url_for('my_works'))
     return render_template('member/upload.html')
+
+@app.route('/my-profile', methods=['GET', 'POST'])
+@login_required
+def my_profile():
+    if request.method == 'POST':
+        county   = request.form.get('county','').strip()
+        service  = ','.join(request.form.getlist('service_areas'))
+        min_amt  = request.form.get('min_amount','').strip()
+        intro    = request.form.get('intro','').strip()
+        line_id  = request.form.get('line_id','').strip()
+        website  = request.form.get('website','').strip()
+        ws = _ws_partner()
+        rows = ws.get_all_records()
+        idx = next((i for i,r in enumerate(rows) if r.get('會員Email','').lower() == current_user().lower()), None)
+        row_data = [current_user(), county, service, min_amt, intro, line_id, website,
+                    datetime.now().strftime('%Y-%m-%d %H:%M')]
+        if idx is None:
+            ws.append_row(row_data)
+        else:
+            ws.update(f'A{idx+2}:H{idx+2}', [row_data])
+        flash('資料已更新', 'success')
+        return redirect(url_for('my_profile'))
+    profile = get_partner_profile(current_user())
+    member  = find_member(current_user()) or {}
+    return render_template('member/profile.html', profile=profile, member=member)
 
 @app.route('/my-works')
 @login_required
@@ -332,10 +430,14 @@ def admin_dashboard():
     rejected = [r for r in rows if r.get('狀態') == 'rejected']
     contacts = _ws('聯絡').get_all_records()[-20:]
     members  = _ws('會員').get_all_records()
+    mats_pending = get_materials(status='pending')
+    mats_active  = get_materials(status='active')
     return render_template('admin/dashboard.html',
                            pending=pending, published=published,
                            rejected=rejected, contacts=contacts,
-                           members=members)
+                           members=members,
+                           mats_pending=mats_pending,
+                           mats_active=mats_active)
 
 @app.route('/admin/work/<work_id>', methods=['GET', 'POST'])
 @login_required
@@ -387,6 +489,138 @@ def platform():
 @app.route('/platform/investor')
 def platform_investor():
     return render_template('public/platform_investor.html')
+
+@app.route('/contact/investor', methods=['GET', 'POST'])
+def contact_investor():
+    if request.method == 'POST':
+        row = [
+            datetime.now().strftime('%Y-%m-%d %H:%M'),
+            request.form.get('name','').strip(),
+            request.form.get('company','').strip(),
+            request.form.get('phone','').strip(),
+            request.form.get('email','').strip(),
+            request.form.get('amount','').strip(),
+            request.form.get('message','').strip(),
+        ]
+        _ws('投資人詢問').append_row(row)
+        flash('已收到您的訊息，楊森會在 48 小時內親自回覆。', 'success')
+        return redirect(url_for('contact_investor'))
+    return render_template('public/contact_investor.html')
+
+# ── Supplier Portal ────────────────────────────────────────────
+@app.route('/supplier/register', methods=['GET','POST'])
+def supplier_register():
+    if request.method == 'POST':
+        email   = request.form.get('email','').strip().lower()
+        pw      = request.form.get('password','').strip()
+        company = request.form.get('company','').strip()
+        contact = request.form.get('contact','').strip()
+        phone   = request.form.get('phone','').strip()
+        if not all([email, pw, company, contact, phone]):
+            flash('請填寫所有欄位', 'error')
+            return render_template('supplier/register.html')
+        if len(pw) < 8:
+            flash('密碼至少 8 個字元', 'error')
+            return render_template('supplier/register.html')
+        if find_supplier(email):
+            flash('此 Email 已註冊', 'error')
+            return render_template('supplier/register.html')
+        _ws_supplier().append_row([
+            str(uuid.uuid4())[:8], company, email, _hash(pw),
+            contact, phone, 'active',
+            datetime.now().strftime('%Y-%m-%d %H:%M')
+        ])
+        session['supplier_email']   = email
+        session['supplier_company'] = company
+        flash(f'歡迎，{company}！', 'success')
+        return redirect(url_for('supplier_upload'))
+    return render_template('supplier/register.html')
+
+@app.route('/supplier/login', methods=['GET','POST'])
+def supplier_login():
+    if request.method == 'POST':
+        email = request.form.get('email','').strip().lower()
+        pw    = request.form.get('password','').strip()
+        s     = find_supplier(email)
+        if s and s.get('密碼hash') == _hash(pw) and s.get('狀態') == 'active':
+            session['supplier_email']   = email
+            session['supplier_company'] = s.get('公司名稱','')
+            return redirect(request.form.get('next') or url_for('supplier_upload'))
+        flash('帳號或密碼錯誤', 'error')
+    return render_template('supplier/login.html', next=request.args.get('next',''))
+
+@app.route('/supplier/logout')
+def supplier_logout():
+    session.pop('supplier_email', None)
+    session.pop('supplier_company', None)
+    return redirect(url_for('index'))
+
+@app.route('/supplier/upload', methods=['GET','POST'])
+@supplier_required
+def supplier_upload():
+    if request.method == 'POST':
+        name   = request.form.get('name','').strip()
+        brand  = request.form.get('brand','').strip()
+        spec   = request.form.get('spec','').strip()
+        unit   = request.form.get('unit','').strip()
+        price  = request.form.get('price','').strip()
+        tags   = request.form.get('tags','').strip()
+        photos = request.files.getlist('photos')
+        valid  = [f for f in photos if f and f.filename]
+        if not all([name, spec, unit, price]):
+            flash('請填寫必要欄位（素材名稱、規格尺寸、單位、零售價）', 'error')
+            return render_template('supplier/upload.html')
+        mat_id = str(uuid.uuid4()).replace('-','')[:12]
+        fids   = []
+        if valid:
+            try:
+                fids = upload_photos(valid, f'mat_{mat_id}')
+            except Exception as e:
+                flash(f'圖片上傳失敗：{e}', 'error')
+                return render_template('supplier/upload.html')
+        _ws_material().append_row([
+            mat_id, name, brand, spec, unit, price,
+            ','.join(fids), tags, current_supplier(),
+            'pending', datetime.now().strftime('%Y-%m-%d %H:%M'), ''
+        ])
+        flash('上傳成功！審核通過後即可在平台顯示', 'success')
+        return redirect(url_for('supplier_materials'))
+    return render_template('supplier/upload.html')
+
+@app.route('/supplier/materials')
+@supplier_required
+def supplier_materials():
+    mats = get_materials(supplier_email=current_supplier())
+    return render_template('supplier/my_materials.html', materials=mats)
+
+# ── Admin material review ──────────────────────────────────────
+@app.route('/admin/material/<mat_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_material(mat_id):
+    ws   = _ws_material()
+    rows = ws.get_all_records()
+    idx  = next((i for i,r in enumerate(rows) if r.get('素材ID') == mat_id), None)
+    if idx is None:
+        abort(404)
+    row_num = idx + 2
+    action  = request.form.get('action')
+    note    = request.form.get('note','').strip()
+    extra   = request.form.get('extra_tags','').strip()
+    if action == 'approve':
+        ws.update_cell(row_num, 10, 'active')
+        if note: ws.update_cell(row_num, 12, note)
+        flash('素材已審核上架', 'success')
+    elif action == 'reject':
+        ws.update_cell(row_num, 10, 'rejected')
+        if note: ws.update_cell(row_num, 12, note)
+        flash('素材已退回', 'success')
+    elif action == 'add_tags':
+        existing = rows[idx].get('標籤','')
+        combined = ','.join(filter(None, [existing, extra]))
+        ws.update_cell(row_num, 8, combined)
+        flash('標籤已補充', 'success')
+    return redirect(url_for('admin_dashboard') + '#materials')
 
 @app.errorhandler(403)
 def e403(e):
