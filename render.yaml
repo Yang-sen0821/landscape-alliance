@@ -17,3 +17,5 @@ services:
         value: "0910-006-229"
       - key: GOOGLE_CREDENTIALS
         sync: false
+      - key: DRIVE_OAUTH_TOKEN
+        sync: false

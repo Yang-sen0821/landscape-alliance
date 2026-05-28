@@ -5,7 +5,9 @@ from functools import wraps
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, flash, abort)
 import gspread
-from google.oauth2.service_account import Credentials
+from google.oauth2.service_account import Credentials as SACredentials
+from google.oauth2.credentials import Credentials as OAuthCredentials
+import google.auth.transport.requests as _g_req
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
@@ -29,30 +31,48 @@ MASTER_TAGS = {
 SUPPLIER_HEADERS = ['供應商ID', '公司名稱', 'Email', '密碼hash', '聯絡人', '電話', '狀態', '註冊時間']
 MATERIAL_HEADERS = ['素材ID', '素材名稱', '品牌', '規格尺寸', '單位', '零售價', '照片IDs', '標籤', '供應商Email', '狀態', '上傳時間', '備註']
 
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive',
-]
+SHEET_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+DRIVE_SCOPES  = ['https://www.googleapis.com/auth/drive.file']
 
 _gc = _gc_ts = _drive_svc = None
 
-def _creds():
+def _sa_creds():
     raw = os.environ.get('GOOGLE_CREDENTIALS')
     info = json.loads(raw) if raw else json.load(open(r'E:\keys\google_service_account.json', encoding='utf-8'))
-    return Credentials.from_service_account_info(info, scopes=SCOPES)
+    return SACredentials.from_service_account_info(info, scopes=SHEET_SCOPES)
+
+def _drive_oauth_creds():
+    """OAuth2 credentials for Drive — uses g2349311@musengarden.com, avoids SA quota issue."""
+    raw = os.environ.get('DRIVE_OAUTH_TOKEN')
+    if raw:
+        info = json.loads(raw)
+    else:
+        local_file = r'E:\keys\landscape_drive_token.json'
+        with open(local_file, encoding='utf-8') as f:
+            info = json.load(f)
+    creds = OAuthCredentials(
+        token=info.get('token'),
+        refresh_token=info['refresh_token'],
+        token_uri=info.get('token_uri', 'https://oauth2.googleapis.com/token'),
+        client_id=info['client_id'],
+        client_secret=info['client_secret'],
+        scopes=DRIVE_SCOPES,
+    )
+    if not creds.valid:
+        creds.refresh(_g_req.Request())
+    return creds
 
 def _client():
     global _gc, _gc_ts
     if _gc and time.time() - (_gc_ts or 0) < 3600:
         return _gc
-    _gc = gspread.authorize(_creds())
+    _gc = gspread.authorize(_sa_creds())
     _gc_ts = time.time()
     return _gc
 
 def _drive():
     global _drive_svc
-    if not _drive_svc:
-        _drive_svc = build('drive', 'v3', credentials=_creds())
+    _drive_svc = build('drive', 'v3', credentials=_drive_oauth_creds())
     return _drive_svc
 
 def _ws(tab):
