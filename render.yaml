@@ -7,6 +7,8 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: DATABASE_URL
+        sync: false
       - key: ADMIN_EMAIL
         value: g2349311@gmail.com
       - key: SHEET_ID

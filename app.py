@@ -6,20 +6,28 @@ from flask import (Flask, render_template, request, redirect,
                    url_for, session, flash, abort)
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
-import gspread
-from google.oauth2.service_account import Credentials as SACredentials
-from google.oauth2.credentials import Credentials as OAuthCredentials
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 import google.auth.transport.requests as _g_req
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'landscape-2026-secret')
+
+# ── Database config ────────────────────────────────────────────
+db_url = os.environ.get('DATABASE_URL', 'sqlite:///landscape.db')
+if db_url.startswith('postgres://'):
+    db_url = db_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
 csrf = CSRFProtect(app)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 ADMIN_EMAIL     = os.environ.get('ADMIN_EMAIL', 'g2349311@gmail.com')
-SHEET_ID        = os.environ.get('SHEET_ID', '1E76TuBWUEUw93KjOz_xgNGcTqUuDhc0AdfFpShVIWbs')
 DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID', '1qCzsnVGQl6RAQprtWuh4aCMt98J59BkD')
 CONTACT_PHONE   = os.environ.get('CONTACT_PHONE', '0910-006-229')
 
@@ -31,55 +39,117 @@ MASTER_TAGS = {
     '家具設施': ['涼亭棚架', '水景噴泉', '戶外家具', '戶外照明', '圍籬圍牆', '景觀步道'],
 }
 
-SUPPLIER_HEADERS = ['供應商ID', '公司名稱', 'Email', '密碼hash', '聯絡人', '電話', '狀態', '註冊時間']
-MATERIAL_HEADERS = ['素材ID', '素材名稱', '品牌', '規格尺寸', '單位', '零售價', '照片IDs', '標籤', '供應商Email', '狀態', '上傳時間', '備註']
+TW_COUNTIES = [
+    '台北市','新北市','基隆市','桃園市','新竹市','新竹縣','宜蘭縣',
+    '苗栗縣','台中市','彰化縣','南投縣','雲林縣',
+    '嘉義市','嘉義縣','台南市','高雄市','屏東縣',
+    '花蓮縣','台東縣',
+    '澎湖縣','金門縣','連江縣（馬祖）',
+]
 
-SHEET_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 DRIVE_SCOPES  = ['https://www.googleapis.com/auth/drive.file']
+_drive_svc = None
 
-_gc = _gc_ts = _drive_svc = None
+# ── Database Models ────────────────────────────────────────────
 
-def _sa_creds():
-    raw = os.environ.get('GOOGLE_CREDENTIALS')
-    info = json.loads(raw) if raw else json.load(open(r'E:\keys\google_service_account.json', encoding='utf-8'))
-    return SACredentials.from_service_account_info(info, scopes=SHEET_SCOPES)
+class Member(db.Model):
+    __tablename__ = 'members'
+    id = db.Column(db.String(12), primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    legacy_pw_hash = db.Column(db.String(64))  # 舊 SHA-256，遷移用
+    name = db.Column(db.String(120))
+    company = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
+    status = db.Column(db.String(20), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    works = db.relationship('Work', backref='uploader', lazy=True, cascade='all, delete-orphan')
 
-def _drive_oauth_creds():
-    """OAuth2 credentials for Drive — uses g2349311@musengarden.com, avoids SA quota issue."""
-    raw = os.environ.get('DRIVE_OAUTH_TOKEN')
-    if raw:
-        info = json.loads(raw)
-    else:
-        local_file = r'E:\keys\landscape_drive_token.json'
-        with open(local_file, encoding='utf-8') as f:
-            info = json.load(f)
-    creds = OAuthCredentials(
-        token=info.get('token'),
-        refresh_token=info['refresh_token'],
-        token_uri=info.get('token_uri', 'https://oauth2.googleapis.com/token'),
-        client_id=info['client_id'],
-        client_secret=info['client_secret'],
-        scopes=DRIVE_SCOPES,
-    )
-    if not creds.valid:
-        creds.refresh(_g_req.Request())
-    return creds
+class Work(db.Model):
+    __tablename__ = 'works'
+    id = db.Column(db.String(12), primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    tags = db.Column(db.String(500))
+    price = db.Column(db.String(50))
+    photo_ids = db.Column(db.Text)  # CSV
+    uploader_email = db.Column(db.String(120), db.ForeignKey('members.email'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    note = db.Column(db.Text)
+    scale = db.Column(db.String(50))
+    avg_rating = db.Column(db.Float)
+    rating_count = db.Column(db.Integer, default=0)
+    ratings = db.relationship('Rating', backref='work', lazy=True, cascade='all, delete-orphan')
 
-def _client():
-    global _gc, _gc_ts
-    if _gc and time.time() - (_gc_ts or 0) < 3600:
-        return _gc
-    _gc = gspread.authorize(_sa_creds())
-    _gc_ts = time.time()
-    return _gc
+class Rating(db.Model):
+    __tablename__ = 'ratings'
+    id = db.Column(db.String(12), primary_key=True)
+    work_id = db.Column(db.String(12), db.ForeignKey('works.id'), nullable=False)
+    name = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
+    score = db.Column(db.Integer)
+    note = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-def _drive():
-    global _drive_svc
-    _drive_svc = build('drive', 'v3', credentials=_drive_oauth_creds())
-    return _drive_svc
+class Contact(db.Model):
+    __tablename__ = 'contacts'
+    id = db.Column(db.String(12), primary_key=True)
+    name = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
+    message = db.Column(db.Text)
+    work_id = db.Column(db.String(12))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-def _ws(tab):
-    return _client().open_by_key(SHEET_ID).worksheet(tab)
+class Supplier(db.Model):
+    __tablename__ = 'suppliers'
+    id = db.Column(db.String(12), primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    legacy_pw_hash = db.Column(db.String(64))
+    company = db.Column(db.String(120))
+    contact_name = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
+    status = db.Column(db.String(20), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    materials = db.relationship('Material', backref='supplier', lazy=True, cascade='all, delete-orphan')
+
+class Material(db.Model):
+    __tablename__ = 'materials'
+    id = db.Column(db.String(12), primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    brand = db.Column(db.String(120))
+    spec = db.Column(db.String(255))
+    unit = db.Column(db.String(50))
+    price = db.Column(db.String(50))
+    photo_ids = db.Column(db.Text)  # CSV
+    tags = db.Column(db.String(500))
+    supplier_email = db.Column(db.String(120), db.ForeignKey('suppliers.email'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    note = db.Column(db.Text)
+
+class PartnerProfile(db.Model):
+    __tablename__ = 'partner_profiles'
+    id = db.Column(db.String(12), primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    county = db.Column(db.String(50))
+    service_areas = db.Column(db.String(500))  # CSV
+    min_amount = db.Column(db.String(50))
+    intro = db.Column(db.Text)
+    line_id = db.Column(db.String(120))
+    website = db.Column(db.String(255))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class InvestorInquiry(db.Model):
+    __tablename__ = 'investor_inquiries'
+    id = db.Column(db.String(12), primary_key=True)
+    name = db.Column(db.String(120))
+    company = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
+    email = db.Column(db.String(120))
+    amount = db.Column(db.String(50))
+    message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # ── Auth helpers ──────────────────────────────────────────────
 def _hash(pw):
@@ -119,44 +189,12 @@ def admin_required(f):
         return f(*a, **kw)
     return wrapped
 
-# ── Supplier helpers ───────────────────────────────────────────
-def _ensure_ws(tab, headers):
-    try:
-        return _client().open_by_key(SHEET_ID).worksheet(tab)
-    except Exception:
-        sh = _client().open_by_key(SHEET_ID)
-        ws = sh.add_worksheet(title=tab, rows=1000, cols=len(headers))
-        ws.append_row(headers)
-        return ws
-
-def _ws_supplier():
-    return _ensure_ws('供應商', ['供應商ID','公司名稱','Email','密碼hash','聯絡人','電話','狀態','註冊時間'])
-
-def _ws_material():
-    return _ensure_ws('素材', ['素材ID','素材名稱','品牌','規格尺寸','單位','零售價','照片IDs','標籤','供應商Email','狀態','上傳時間','備註'])
-
-def _ws_partner():
-    return _ensure_ws('夥伴資料', ['會員Email','所在縣市','服務縣市','最小接案金額','公司簡介','LINE ID','官方網站','更新時間'])
-
-def find_supplier(email):
-    for row in _ws_supplier().get_all_records():
-        if row.get('Email','').lower() == email.lower():
-            return row
-    return None
-
-def get_materials(supplier_email=None, status=None):
-    rows = _ws_material().get_all_records()
-    if supplier_email:
-        rows = [r for r in rows if r.get('供應商Email','').lower() == supplier_email.lower()]
-    if status:
-        rows = [r for r in rows if r.get('狀態') == status]
-    return rows
+# ── Member helpers ─────────────────────────────────────────────
+def find_member(email):
+    return Member.query.filter_by(email=email.lower()).first()
 
 def get_partner_profile(email):
-    for row in _ws_partner().get_all_records():
-        if row.get('會員Email','').lower() == email.lower():
-            return row
-    return {}
+    return PartnerProfile.query.filter_by(email=email.lower()).first() or {}
 
 def current_supplier():
     return session.get('supplier_email')
@@ -169,39 +207,37 @@ def supplier_required(f):
         return f(*a, **kw)
     return wrapped
 
-TW_COUNTIES = [
-    '台北市','新北市','基隆市','桃園市','新竹市','新竹縣','宜蘭縣',
-    '苗栗縣','台中市','彰化縣','南投縣','雲林縣',
-    '嘉義市','嘉義縣','台南市','高雄市','屏東縣',
-    '花蓮縣','台東縣',
-    '澎湖縣','金門縣','連江縣（馬祖）',
-]
+# ── Supplier helpers ───────────────────────────────────────────
+def find_supplier(email):
+    return Supplier.query.filter_by(email=email.lower()).first()
 
-# ── Sheet helpers ─────────────────────────────────────────────
-def get_works(status=None):
-    rows = _ws('作品').get_all_records()
+def get_materials(supplier_email=None, status=None):
+    query = Material.query
+    if supplier_email:
+        query = query.filter_by(supplier_email=supplier_email.lower())
     if status:
-        rows = [r for r in rows if r.get('狀態') == status]
-    return rows
+        query = query.filter_by(status=status)
+    return query.all()
+
+# ── Sheet helpers ──────────────────────────────────────────────
+def get_works(status=None):
+    query = Work.query
+    if status:
+        query = query.filter_by(status=status)
+    return query.all()
 
 def get_all_tags():
     tags = set()
     for w in get_works('published'):
-        for t in w.get('標籤', '').split(','):
+        for t in (w.tags or '').split(','):
             t = t.strip()
             if t:
                 tags.add(t)
     return sorted(tags)
 
-def find_member(email):
-    for m in _ws('會員').get_all_records():
-        if m.get('Email', '').lower() == email.lower():
-            return m
-    return None
-
 def photo_urls(ids_str, size='w600'):
     return [f'https://drive.google.com/thumbnail?id={fid.strip()}&sz={size}'
-            for fid in ids_str.split(',') if fid.strip()]
+            for fid in (ids_str or '').split(',') if fid.strip()]
 
 def fmt_price(val):
     try:
@@ -210,25 +246,37 @@ def fmt_price(val):
         return str(val)
 
 def get_ratings(work_id=None):
-    rows = _ws('評分').get_all_records()
+    query = Rating.query
     if work_id:
-        rows = [r for r in rows if r.get('作品ID') == work_id]
-    return rows
+        query = query.filter_by(work_id=work_id)
+    return query.all()
 
 def avg_rating(work_id):
-    ratings = get_ratings(work_id)
-    scores = [int(r['分數']) for r in ratings if str(r.get('分數','')).isdigit()]
-    if not scores:
-        return None, 0
-    return round(sum(scores) / len(scores), 1), len(scores)
+    """讀取快取的評分（重算在 _recalc_avg 進行）"""
+    work = Work.query.filter_by(id=work_id).first()
+    if work:
+        return work.avg_rating, work.rating_count or 0
+    return None, 0
+
+def _recalc_avg(work_id):
+    """重新計算並快取評分"""
+    work = Work.query.filter_by(id=work_id).first()
+    if not work:
+        return
+    scores = db.session.query(func.avg(Rating.score), func.count(Rating.id)).filter_by(work_id=work_id).first()
+    if scores[0]:
+        work.avg_rating = round(float(scores[0]), 1)
+        work.rating_count = scores[1]
+    else:
+        work.avg_rating = None
+        work.rating_count = 0
+    db.session.commit()
 
 def ratings_map(works):
-    all_r = _ws('評分').get_all_records()
+    """為多個作品快速取得評分"""
     result = {}
     for w in works:
-        wid = w.get('作品ID')
-        scores = [int(r['分數']) for r in all_r if r.get('作品ID') == wid and str(r.get('分數','')).isdigit()]
-        result[wid] = (round(sum(scores)/len(scores),1), len(scores)) if scores else (None, 0)
+        result[w.id] = (w.avg_rating, w.rating_count or 0)
     return result
 
 app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
@@ -241,6 +289,32 @@ app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
 # ── Drive upload ──────────────────────────────────────────────
 _ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp', 'gif'}
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+def _drive_oauth_creds():
+    """OAuth2 credentials for Drive — uses g2349311@musengarden.com, avoids SA quota issue."""
+    raw = os.environ.get('DRIVE_OAUTH_TOKEN')
+    if raw:
+        info = json.loads(raw)
+    else:
+        local_file = r'E:\keys\landscape_drive_token.json'
+        with open(local_file, encoding='utf-8') as f:
+            info = json.load(f)
+    creds = OAuthCredentials(
+        token=info.get('token'),
+        refresh_token=info['refresh_token'],
+        token_uri=info.get('token_uri', 'https://oauth2.googleapis.com/token'),
+        client_id=info['client_id'],
+        client_secret=info['client_secret'],
+        scopes=DRIVE_SCOPES,
+    )
+    if not creds.valid:
+        creds.refresh(_g_req.Request())
+    return creds
+
+def _drive():
+    global _drive_svc
+    _drive_svc = build('drive', 'v3', credentials=_drive_oauth_creds())
+    return _drive_svc
 
 def upload_photos(files, work_id):
     svc = _drive()
@@ -289,11 +363,11 @@ def upload_photos(files, work_id):
 # ── Public routes ─────────────────────────────────────────────
 @app.route('/')
 def index():
-    works = get_works('published')
+    works = get_works('published')[:9]
     tags  = get_all_tags()
-    rmap  = ratings_map(works[:9])
-    return render_template('public/index.html', works=works[:9], tags=tags,
-                           total=len(works), rmap=rmap)
+    rmap  = ratings_map(works)
+    return render_template('public/index.html', works=works, tags=tags,
+                           total=len(get_works('published')), rmap=rmap)
 
 @app.route('/works')
 def works():
@@ -303,15 +377,15 @@ def works():
     mx    = request.args.get('max', '').strip()
     filtered = all_w
     if tag:
-        filtered = [w for w in filtered if tag in w.get('標籤', '')]
+        filtered = [w for w in filtered if tag in (w.tags or '')]
     if mn.isdigit():
         filtered = [w for w in filtered
-                    if str(w.get('完工金額','')).replace(',','').isdigit()
-                    and int(str(w.get('完工金額','')).replace(',','')) >= int(mn)]
+                    if (w.price or '').replace(',','').replace('$','').isdigit()
+                    and int((w.price or '').replace(',','').replace('$','')) >= int(mn)]
     if mx.isdigit():
         filtered = [w for w in filtered
-                    if str(w.get('完工金額','')).replace(',','').isdigit()
-                    and int(str(w.get('完工金額','')).replace(',','')) <= int(mx)]
+                    if (w.price or '').replace(',','').replace('$','').isdigit()
+                    and int((w.price or '').replace(',','').replace('$','')) <= int(mx)]
     rmap = ratings_map(filtered)
     return render_template('public/works.html', works=filtered,
                            tags=get_all_tags(), active_tag=tag,
@@ -319,11 +393,11 @@ def works():
 
 @app.route('/work/<work_id>')
 def work_detail(work_id):
-    work = next((w for w in get_works('published') if w.get('作品ID') == work_id), None)
+    work = Work.query.filter_by(id=work_id, status='published').first()
     if not work:
         abort(404)
-    photos  = photo_urls(work.get('照片IDs', ''), size='w1000')
-    tags    = [t.strip() for t in work.get('標籤', '').split(',') if t.strip()]
+    photos  = photo_urls(work.photo_ids, size='w1000')
+    tags    = [t.strip() for t in (work.tags or '').split(',') if t.strip()]
     ratings = get_ratings(work_id)
     avg, cnt = avg_rating(work_id)
     return render_template('public/work.html', work=work, photos=photos, tags=tags,
@@ -332,7 +406,7 @@ def work_detail(work_id):
 
 @app.route('/work/<work_id>/rate', methods=['POST'])
 def rate_work(work_id):
-    work = next((w for w in get_works('published') if w.get('作品ID') == work_id), None)
+    work = Work.query.filter_by(id=work_id, status='published').first()
     if not work:
         abort(404)
     name  = request.form.get('name','').strip()
@@ -342,24 +416,36 @@ def rate_work(work_id):
     if not name or not score or not score.isdigit() or not (1 <= int(score) <= 5):
         flash('請填寫姓名並選擇評分', 'error')
         return redirect(url_for('work_detail', work_id=work_id) + '#rate')
-    _ws('評分').append_row([
-        str(uuid.uuid4())[:8], work_id, name, phone, int(score), note,
-        datetime.now().strftime('%Y-%m-%d %H:%M')
-    ])
+
+    rating = Rating(
+        id=str(uuid.uuid4())[:8],
+        work_id=work_id,
+        name=name,
+        phone=phone,
+        score=int(score),
+        note=note,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(rating)
+    db.session.commit()
+    _recalc_avg(work_id)
+
     flash('感謝您的評價！', 'success')
     return redirect(url_for('work_detail', work_id=work_id) + '#ratings')
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
     if request.method == 'POST':
-        row = [
-            datetime.now().strftime('%Y-%m-%d %H:%M'),
-            request.form.get('name','').strip(),
-            request.form.get('phone','').strip(),
-            request.form.get('message','').strip(),
-            request.form.get('work_id','').strip(),
-        ]
-        _ws('聯絡').append_row(row)
+        contact_obj = Contact(
+            id=str(uuid.uuid4())[:8],
+            name=request.form.get('name','').strip(),
+            phone=request.form.get('phone','').strip(),
+            message=request.form.get('message','').strip(),
+            work_id=request.form.get('work_id','').strip(),
+            created_at=datetime.utcnow()
+        )
+        db.session.add(contact_obj)
+        db.session.commit()
         flash('已收到您的訊息，我們會盡快與您聯絡！', 'success')
         return redirect(url_for('contact'))
     work_id = request.args.get('work_id', '')
@@ -384,11 +470,20 @@ def register():
         if find_member(email):
             flash('此 Email 已註冊', 'error')
             return render_template('auth/register.html')
-        _ws('會員').append_row([
-            str(uuid.uuid4())[:8], email, _hash(pw),
-            name, company, phone, 'active',
-            datetime.now().strftime('%Y-%m-%d %H:%M')
-        ])
+
+        member = Member(
+            id=str(uuid.uuid4())[:8],
+            email=email,
+            password_hash=_hash(pw),
+            name=name,
+            company=company,
+            phone=phone,
+            status='active',
+            created_at=datetime.utcnow()
+        )
+        db.session.add(member)
+        db.session.commit()
+
         session['email'] = email
         session['name']  = name
         flash(f'歡迎，{name}！帳號建立完成', 'success')
@@ -401,19 +496,16 @@ def login():
         email = request.form.get('email','').strip().lower()
         pw    = request.form.get('password','').strip()
         m     = find_member(email)
-        if m and m.get('狀態') == 'active':
-            ok, needs_upgrade = _verify_password(pw, m.get('密碼hash', ''))
+        if m and m.status == 'active':
+            ok, needs_upgrade = _verify_password(pw, m.password_hash)
             if ok:
                 if needs_upgrade:
                     # 自動升級舊 SHA-256 hash 為 pbkdf2:sha256
-                    ws = _ws('會員')
-                    rows = ws.get_all_records()
-                    idx = next((i for i, r in enumerate(rows)
-                                if r.get('Email', '').lower() == email), None)
-                    if idx is not None:
-                        ws.update_cell(idx + 2, 3, _hash(pw))
+                    m.password_hash = _hash(pw)
+                    m.legacy_pw_hash = None
+                    db.session.commit()
                 session['email'] = email
-                session['name']  = m.get('姓名','')
+                session['name']  = m.name or ''
                 nxt = request.form.get('next') or (url_for('admin_dashboard') if email == ADMIN_EMAIL else url_for('upload'))
                 return redirect(nxt)
         flash('帳號或密碼錯誤', 'error')
@@ -447,11 +539,21 @@ def upload():
         except Exception as e:
             flash(f'圖片上傳失敗：{e}', 'error')
             return render_template('member/upload.html')
-        _ws('作品').append_row([
-            work_id, name, tags, price, ','.join(fids),
-            current_user(), 'pending',
-            datetime.now().strftime('%Y-%m-%d %H:%M'), '', scale
-        ])
+
+        work = Work(
+            id=work_id,
+            name=name,
+            tags=tags,
+            price=price,
+            photo_ids=','.join(fids),
+            uploader_email=current_user(),
+            status='pending',
+            created_at=datetime.utcnow(),
+            scale=scale
+        )
+        db.session.add(work)
+        db.session.commit()
+
         flash('上傳成功！審核通過後即公開展示', 'success')
         return redirect(url_for('my_works'))
     return render_template('member/upload.html')
@@ -466,15 +568,31 @@ def my_profile():
         intro    = request.form.get('intro','').strip()
         line_id  = request.form.get('line_id','').strip()
         website  = request.form.get('website','').strip()
-        ws = _ws_partner()
-        rows = ws.get_all_records()
-        idx = next((i for i,r in enumerate(rows) if r.get('會員Email','').lower() == current_user().lower()), None)
-        row_data = [current_user(), county, service, min_amt, intro, line_id, website,
-                    datetime.now().strftime('%Y-%m-%d %H:%M')]
-        if idx is None:
-            ws.append_row(row_data)
+
+        profile = PartnerProfile.query.filter_by(email=current_user()).first()
+        if profile:
+            profile.county = county
+            profile.service_areas = service
+            profile.min_amount = min_amt
+            profile.intro = intro
+            profile.line_id = line_id
+            profile.website = website
+            profile.updated_at = datetime.utcnow()
         else:
-            ws.update(f'A{idx+2}:H{idx+2}', [row_data])
+            profile = PartnerProfile(
+                id=str(uuid.uuid4())[:8],
+                email=current_user(),
+                county=county,
+                service_areas=service,
+                min_amount=min_amt,
+                intro=intro,
+                line_id=line_id,
+                website=website,
+                updated_at=datetime.utcnow()
+            )
+            db.session.add(profile)
+        db.session.commit()
+
         flash('資料已更新', 'success')
         return redirect(url_for('my_profile'))
     profile = get_partner_profile(current_user())
@@ -484,21 +602,19 @@ def my_profile():
 @app.route('/my-works')
 @login_required
 def my_works():
-    rows = _ws('作品').get_all_records()
-    mine = [r for r in rows if r.get('上傳者Email') == current_user()]
-    return render_template('member/my_works.html', works=mine)
+    works = Work.query.filter_by(uploader_email=current_user()).all()
+    return render_template('member/my_works.html', works=works)
 
 # ── Admin ─────────────────────────────────────────────────────
 @app.route('/admin')
 @login_required
 @admin_required
 def admin_dashboard():
-    rows     = _ws('作品').get_all_records()
-    pending  = [r for r in rows if r.get('狀態') == 'pending']
-    published= [r for r in rows if r.get('狀態') == 'published']
-    rejected = [r for r in rows if r.get('狀態') == 'rejected']
-    contacts = _ws('聯絡').get_all_records()[-20:]
-    members  = _ws('會員').get_all_records()
+    pending  = Work.query.filter_by(status='pending').all()
+    published = Work.query.filter_by(status='published').all()
+    rejected = Work.query.filter_by(status='rejected').all()
+    contacts = Contact.query.order_by(Contact.created_at.desc()).limit(20).all()
+    members  = Member.query.all()
     mats_pending = get_materials(status='pending')
     mats_active  = get_materials(status='active')
     return render_template('admin/dashboard.html',
@@ -512,44 +628,39 @@ def admin_dashboard():
 @login_required
 @admin_required
 def admin_work(work_id):
-    ws   = _ws('作品')
-    rows = ws.get_all_records()
-    idx  = next((i for i,r in enumerate(rows) if r.get('作品ID') == work_id), None)
-    if idx is None:
+    work = Work.query.filter_by(id=work_id).first()
+    if not work:
         abort(404)
-    work    = rows[idx]
-    row_num = idx + 2
 
     if request.method == 'POST':
         action = request.form.get('action')
         if action in ('approve', 'save'):
-            ws.update(f'B{row_num}:D{row_num}', [[
-                request.form.get('name', work['作品名稱']),
-                request.form.get('tags', work['標籤']),
-                request.form.get('price', work['完工金額']),
-            ]])
-            ws.update_cell(row_num, 9, request.form.get('note',''))
+            work.name = request.form.get('name', work.name)
+            work.tags = request.form.get('tags', work.tags)
+            work.price = request.form.get('price', work.price)
+            work.note = request.form.get('note','')
             if action == 'approve':
-                ws.update_cell(row_num, 7, 'published')
+                work.status = 'published'
                 flash('已審核通過並上架', 'success')
             else:
                 flash('已儲存', 'success')
         elif action == 'reject':
-            ws.update_cell(row_num, 7, 'rejected')
+            work.status = 'rejected'
             flash('已退回', 'success')
         elif action == 'unpublish':
-            ws.update_cell(row_num, 7, 'pending')
+            work.status = 'pending'
             flash('已下架', 'success')
         elif action == 'delete':
-            ws.delete_rows(row_num)
+            db.session.delete(work)
+            db.session.commit()
             flash('已刪除', 'success')
             return redirect(url_for('admin_dashboard'))
+
+        db.session.commit()
         return redirect(url_for('admin_dashboard'))
 
-    photos = photo_urls(work.get('照片IDs',''), size='w800')
-    tags   = work.get('標籤','')
-    return render_template('admin/work_edit.html', work=work,
-                           photos=photos, tags=tags)
+    photos = photo_urls(work.photo_ids, size='w800')
+    return render_template('admin/work_edit.html', work=work, photos=photos)
 
 @app.route('/platform')
 def platform():
@@ -562,16 +673,18 @@ def platform_investor():
 @app.route('/contact/investor', methods=['GET', 'POST'])
 def contact_investor():
     if request.method == 'POST':
-        row = [
-            datetime.now().strftime('%Y-%m-%d %H:%M'),
-            request.form.get('name','').strip(),
-            request.form.get('company','').strip(),
-            request.form.get('phone','').strip(),
-            request.form.get('email','').strip(),
-            request.form.get('amount','').strip(),
-            request.form.get('message','').strip(),
-        ]
-        _ws('投資人詢問').append_row(row)
+        inquiry = InvestorInquiry(
+            id=str(uuid.uuid4())[:8],
+            name=request.form.get('name','').strip(),
+            company=request.form.get('company','').strip(),
+            phone=request.form.get('phone','').strip(),
+            email=request.form.get('email','').strip(),
+            amount=request.form.get('amount','').strip(),
+            message=request.form.get('message','').strip(),
+            created_at=datetime.utcnow()
+        )
+        db.session.add(inquiry)
+        db.session.commit()
         flash('已收到您的訊息，楊森會在 48 小時內親自回覆。', 'success')
         return redirect(url_for('contact_investor'))
     return render_template('public/contact_investor.html')
@@ -594,11 +707,20 @@ def supplier_register():
         if find_supplier(email):
             flash('此 Email 已註冊', 'error')
             return render_template('supplier/register.html')
-        _ws_supplier().append_row([
-            str(uuid.uuid4())[:8], company, email, _hash(pw),
-            contact, phone, 'active',
-            datetime.now().strftime('%Y-%m-%d %H:%M')
-        ])
+
+        supplier = Supplier(
+            id=str(uuid.uuid4())[:8],
+            email=email,
+            password_hash=_hash(pw),
+            company=company,
+            contact_name=contact,
+            phone=phone,
+            status='active',
+            created_at=datetime.utcnow()
+        )
+        db.session.add(supplier)
+        db.session.commit()
+
         session['supplier_email']   = email
         session['supplier_company'] = company
         flash(f'歡迎，{company}！', 'success')
@@ -611,19 +733,16 @@ def supplier_login():
         email = request.form.get('email','').strip().lower()
         pw    = request.form.get('password','').strip()
         s     = find_supplier(email)
-        if s and s.get('狀態') == 'active':
-            ok, needs_upgrade = _verify_password(pw, s.get('密碼hash', ''))
+        if s and s.status == 'active':
+            ok, needs_upgrade = _verify_password(pw, s.password_hash)
             if ok:
                 if needs_upgrade:
                     # 自動升級舊 SHA-256 hash 為 pbkdf2:sha256
-                    ws = _ws_supplier()
-                    rows = ws.get_all_records()
-                    idx = next((i for i, r in enumerate(rows)
-                                if r.get('Email', '').lower() == email), None)
-                    if idx is not None:
-                        ws.update_cell(idx + 2, 4, _hash(pw))
+                    s.password_hash = _hash(pw)
+                    s.legacy_pw_hash = None
+                    db.session.commit()
                 session['supplier_email']   = email
-                session['supplier_company'] = s.get('公司名稱','')
+                session['supplier_company'] = s.company or ''
                 return redirect(request.form.get('next') or url_for('supplier_upload'))
         flash('帳號或密碼錯誤', 'error')
     return render_template('supplier/login.html', next=request.args.get('next',''))
@@ -657,11 +776,23 @@ def supplier_upload():
             except Exception as e:
                 flash(f'圖片上傳失敗：{e}', 'error')
                 return render_template('supplier/upload.html')
-        _ws_material().append_row([
-            mat_id, name, brand, spec, unit, price,
-            ','.join(fids), tags, current_supplier(),
-            'pending', datetime.now().strftime('%Y-%m-%d %H:%M'), ''
-        ])
+
+        material = Material(
+            id=mat_id,
+            name=name,
+            brand=brand,
+            spec=spec,
+            unit=unit,
+            price=price,
+            photo_ids=','.join(fids),
+            tags=tags,
+            supplier_email=current_supplier(),
+            status='pending',
+            created_at=datetime.utcnow()
+        )
+        db.session.add(material)
+        db.session.commit()
+
         flash('上傳成功！審核通過後即可在平台顯示', 'success')
         return redirect(url_for('supplier_materials'))
     return render_template('supplier/upload.html')
@@ -677,28 +808,31 @@ def supplier_materials():
 @login_required
 @admin_required
 def admin_material(mat_id):
-    ws   = _ws_material()
-    rows = ws.get_all_records()
-    idx  = next((i for i,r in enumerate(rows) if r.get('素材ID') == mat_id), None)
-    if idx is None:
+    material = Material.query.filter_by(id=mat_id).first()
+    if not material:
         abort(404)
-    row_num = idx + 2
+
     action  = request.form.get('action')
     note    = request.form.get('note','').strip()
     extra   = request.form.get('extra_tags','').strip()
+
     if action == 'approve':
-        ws.update_cell(row_num, 10, 'active')
-        if note: ws.update_cell(row_num, 12, note)
+        material.status = 'active'
+        if note:
+            material.note = note
         flash('素材已審核上架', 'success')
     elif action == 'reject':
-        ws.update_cell(row_num, 10, 'rejected')
-        if note: ws.update_cell(row_num, 12, note)
+        material.status = 'rejected'
+        if note:
+            material.note = note
         flash('素材已退回', 'success')
     elif action == 'add_tags':
-        existing = rows[idx].get('標籤','')
+        existing = material.tags or ''
         combined = ','.join(filter(None, [existing, extra]))
-        ws.update_cell(row_num, 8, combined)
+        material.tags = combined
         flash('標籤已補充', 'success')
+
+    db.session.commit()
     return redirect(url_for('admin_dashboard') + '#materials')
 
 @app.errorhandler(403)
@@ -710,4 +844,6 @@ def e404(e):
     return render_template('error.html', code=404, msg='頁面不存在'), 404
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    with app.app_context():
+        db.create_all()
+    app.run(debug=False)
