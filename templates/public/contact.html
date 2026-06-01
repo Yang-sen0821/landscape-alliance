@@ -8,6 +8,7 @@
 
     <div class="card" style="padding:32px">
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label>你的姓名 *</label>
           <input class="form-control" name="name" required placeholder="王小明">

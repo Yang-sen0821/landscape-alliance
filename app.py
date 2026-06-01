@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-import os, json, uuid, time, hashlib
+import os, io, json, uuid, time, hashlib
 from datetime import datetime
 from functools import wraps
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, flash, abort)
+from flask_wtf.csrf import CSRFProtect
+from werkzeug.security import generate_password_hash, check_password_hash
 import gspread
 from google.oauth2.service_account import Credentials as SACredentials
 from google.oauth2.credentials import Credentials as OAuthCredentials
@@ -13,6 +15,7 @@ from googleapiclient.http import MediaIoBaseUpload
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'landscape-2026-secret')
+csrf = CSRFProtect(app)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 
 ADMIN_EMAIL     = os.environ.get('ADMIN_EMAIL', 'g2349311@gmail.com')
@@ -80,7 +83,19 @@ def _ws(tab):
 
 # ── Auth helpers ──────────────────────────────────────────────
 def _hash(pw):
-    return hashlib.sha256(pw.encode('utf-8')).hexdigest()
+    """Generate strong password hash (pbkdf2:sha256)."""
+    return generate_password_hash(pw, method='pbkdf2:sha256')
+
+def _is_legacy_sha256(stored_hash):
+    """Detect old bare SHA-256 hex strings (64 hex chars, no method prefix)."""
+    return len(stored_hash) == 64 and all(c in '0123456789abcdef' for c in stored_hash)
+
+def _verify_password(pw, stored_hash):
+    """Verify password against stored hash; returns (ok, needs_upgrade)."""
+    if _is_legacy_sha256(stored_hash):
+        legacy_ok = hashlib.sha256(pw.encode('utf-8')).hexdigest() == stored_hash
+        return legacy_ok, legacy_ok  # (ok, needs_upgrade)
+    return check_password_hash(stored_hash, pw), False
 
 def current_user():
     return session.get('email')
@@ -224,6 +239,9 @@ app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
                              tw_counties=TW_COUNTIES)
 
 # ── Drive upload ──────────────────────────────────────────────
+_ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp', 'gif'}
+_MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
 def upload_photos(files, work_id):
     svc = _drive()
     folder_meta = {
@@ -234,17 +252,38 @@ def upload_photos(files, work_id):
     wf = svc.files().create(body=folder_meta, fields='id').execute()
     wfid = wf['id']
     ids = []
-    for i, f in enumerate(files):
-        if not f or not f.filename:
-            continue
-        media = MediaIoBaseUpload(f.stream, mimetype=f.content_type or 'image/jpeg', resumable=False)
-        cf = svc.files().create(
-            body={'name': f'{work_id}_{i}{os.path.splitext(f.filename)[1]}', 'parents': [wfid]},
-            media_body=media, fields='id'
-        ).execute()
-        fid = cf['id']
-        svc.permissions().create(fileId=fid, body={'type': 'anyone', 'role': 'reader'}).execute()
-        ids.append(fid)
+    try:
+        for i, f in enumerate(files):
+            if not f or not f.filename:
+                continue
+            # 副檔名白名單驗證
+            ext = os.path.splitext(f.filename)[1].lstrip('.').lower()
+            if ext not in _ALLOWED_EXTENSIONS:
+                raise ValueError(f'不支援的檔案格式「.{ext}」，僅接受：{", ".join(sorted(_ALLOWED_EXTENSIONS))}')
+            # 單檔大小上限 10 MB
+            data = f.stream.read()
+            if len(data) > _MAX_FILE_BYTES:
+                raise ValueError(f'檔案「{f.filename}」超過 10 MB 上限（{len(data) // 1024 // 1024} MB）')
+            media = MediaIoBaseUpload(io.BytesIO(data), mimetype=f.content_type or 'image/jpeg', resumable=False)
+            cf = svc.files().create(
+                body={'name': f'{work_id}_{i}.{ext}', 'parents': [wfid]},
+                media_body=media, fields='id'
+            ).execute()
+            fid = cf['id']
+            svc.permissions().create(fileId=fid, body={'type': 'anyone', 'role': 'reader'}).execute()
+            ids.append(fid)
+    except Exception:
+        # 清除孤兒檔案與資料夾，避免殘留在 Drive
+        for fid in ids:
+            try:
+                svc.files().delete(fileId=fid).execute()
+            except Exception:
+                pass
+        try:
+            svc.files().delete(fileId=wfid).execute()
+        except Exception:
+            pass
+        raise
     return ids
 
 # ── Public routes ─────────────────────────────────────────────
@@ -362,11 +401,21 @@ def login():
         email = request.form.get('email','').strip().lower()
         pw    = request.form.get('password','').strip()
         m     = find_member(email)
-        if m and m.get('密碼hash') == _hash(pw) and m.get('狀態') == 'active':
-            session['email'] = email
-            session['name']  = m.get('姓名','')
-            nxt = request.form.get('next') or (url_for('admin_dashboard') if email == ADMIN_EMAIL else url_for('upload'))
-            return redirect(nxt)
+        if m and m.get('狀態') == 'active':
+            ok, needs_upgrade = _verify_password(pw, m.get('密碼hash', ''))
+            if ok:
+                if needs_upgrade:
+                    # 自動升級舊 SHA-256 hash 為 pbkdf2:sha256
+                    ws = _ws('會員')
+                    rows = ws.get_all_records()
+                    idx = next((i for i, r in enumerate(rows)
+                                if r.get('Email', '').lower() == email), None)
+                    if idx is not None:
+                        ws.update_cell(idx + 2, 3, _hash(pw))
+                session['email'] = email
+                session['name']  = m.get('姓名','')
+                nxt = request.form.get('next') or (url_for('admin_dashboard') if email == ADMIN_EMAIL else url_for('upload'))
+                return redirect(nxt)
         flash('帳號或密碼錯誤', 'error')
     return render_template('auth/login.html', next=request.args.get('next',''))
 
@@ -562,10 +611,20 @@ def supplier_login():
         email = request.form.get('email','').strip().lower()
         pw    = request.form.get('password','').strip()
         s     = find_supplier(email)
-        if s and s.get('密碼hash') == _hash(pw) and s.get('狀態') == 'active':
-            session['supplier_email']   = email
-            session['supplier_company'] = s.get('公司名稱','')
-            return redirect(request.form.get('next') or url_for('supplier_upload'))
+        if s and s.get('狀態') == 'active':
+            ok, needs_upgrade = _verify_password(pw, s.get('密碼hash', ''))
+            if ok:
+                if needs_upgrade:
+                    # 自動升級舊 SHA-256 hash 為 pbkdf2:sha256
+                    ws = _ws_supplier()
+                    rows = ws.get_all_records()
+                    idx = next((i for i, r in enumerate(rows)
+                                if r.get('Email', '').lower() == email), None)
+                    if idx is not None:
+                        ws.update_cell(idx + 2, 4, _hash(pw))
+                session['supplier_email']   = email
+                session['supplier_company'] = s.get('公司名稱','')
+                return redirect(request.form.get('next') or url_for('supplier_upload'))
         flash('帳號或密碼錯誤', 'error')
     return render_template('supplier/login.html', next=request.args.get('next',''))
 

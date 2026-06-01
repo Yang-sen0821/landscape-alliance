@@ -7,6 +7,7 @@
     <p class="section-sub">註冊後即可上傳作品，等待審核上架展示</p>
     <div class="card" style="padding:32px">
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label>姓名 *</label>
           <input class="form-control" name="name" required placeholder="王小明">

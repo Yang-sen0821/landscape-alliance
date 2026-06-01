@@ -21,6 +21,7 @@
 
     <div class="card" style="padding:28px">
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label>作品名稱</label>
           <input class="form-control" name="name" value="{{ work['作品名稱'] }}" required>

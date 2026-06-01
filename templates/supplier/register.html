@@ -9,6 +9,7 @@
     </div>
     <div class="card" style="padding:32px">
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label>公司名稱 *</label>
           <input class="form-control" name="company" required placeholder="例：大綠地戶外家具有限公司">

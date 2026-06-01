@@ -27,6 +27,7 @@
 <div class="container" style="max-width:680px;padding-top:36px">
   <div class="card" style="padding:32px">
     <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="form-group" style="margin:0">

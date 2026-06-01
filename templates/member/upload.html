@@ -23,6 +23,7 @@
     <p class="section-sub">上傳後由管理員審核，通過後公開展示</p>
     <div class="card" style="padding:32px">
       <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="form-group">
           <label>作品名稱 *</label>

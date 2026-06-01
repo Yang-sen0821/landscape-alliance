@@ -6,6 +6,7 @@
     <div class="section-title">登入</div>
     <div class="card" style="padding:32px">
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="next" value="{{ next }}">
         <div class="form-group">
           <label>Email</label>

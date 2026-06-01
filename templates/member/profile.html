@@ -24,6 +24,7 @@
 <div class="container" style="max-width:680px;padding-top:36px;padding-bottom:48px">
   <div class="card" style="padding:32px">
     <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       <div class="form-group">
         <label>公司所在縣市 *</label>
