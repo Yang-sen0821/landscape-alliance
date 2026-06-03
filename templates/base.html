@@ -102,11 +102,10 @@
         {% if current_user() %}
           {% if is_admin() %}
           <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
-          {% else %}
+          {% endif %}
           <a href="{{ url_for('upload') }}">上傳作品</a>
           <a href="{{ url_for('my_profile') }}" class="nav-hide">公司資料</a>
           <a href="{{ url_for('my_works') }}" class="nav-hide">我的作品</a>
-          {% endif %}
           <a href="{{ url_for('logout') }}" class="nav-hide">登出</a>
         {% else %}
           {% if not current_supplier() %}

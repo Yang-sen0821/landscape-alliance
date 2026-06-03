@@ -158,10 +158,10 @@
         {% for m in members %}
         <div style="padding:14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
           <div style="flex:1">
-            <strong>{{ m['姓名'] }}</strong> &mdash; {{ m['公司'] }}
-            <div style="font-size:.82rem;color:var(--gray)">{{ m['Email'] }} &nbsp;·&nbsp; {{ m['電話'] }}</div>
+            <strong>{{ m.name }}</strong> &mdash; {{ m.company }}
+            <div style="font-size:.82rem;color:var(--gray)">{{ m.email }} &nbsp;·&nbsp; {{ m.phone }}</div>
           </div>
-          <span style="font-size:.78rem;color:var(--gray)">{{ m['註冊時間'] }}</span>
+          <span style="font-size:.78rem;color:var(--gray)">{{ m.created_at.strftime('%Y-%m-%d') if m.created_at else '' }}</span>
         </div>
         {% endfor %}
       </div>
