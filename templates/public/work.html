@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}{{ work['作品名稱'] }} — 台灣景觀聯盟{% endblock %}
+{% block title %}{{ work.name }} — 台灣景觀聯盟{% endblock %}
 {% block head %}
 <style>
   .gallery{display:grid;grid-template-columns:1fr;gap:0}
@@ -33,7 +33,7 @@
       <div>
         <div class="card">
           {% if photos %}
-          <img id="main-img" class="main-photo" src="{{ photos[0] }}" alt="{{ work['作品名稱'] }}">
+          <img id="main-img" class="main-photo" src="{{ photos[0] }}" alt="{{ work.name }}">
           {% if photos|length > 1 %}
           <div class="thumb-row">
             {% for p in photos %}
@@ -50,8 +50,8 @@
       <!-- 右：資訊 -->
       <div>
         <div class="info-card">
-          <h1 style="font-size:1.4rem;font-weight:700;color:var(--g900)">{{ work['作品名稱'] }}</h1>
-          <div class="price-big">{{ fmt_price(work['完工金額']) }}</div>
+          <h1 style="font-size:1.4rem;font-weight:700;color:var(--g900)">{{ work.name }}</h1>
+          <div class="price-big">{{ fmt_price(work.price) }}</div>
 
           {% if tags %}
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
@@ -70,7 +70,7 @@
           <div class="cta-box">
             <p style="font-weight:700;color:var(--g900);margin-bottom:6px">對這件作品有興趣？</p>
             <p style="font-size:.88rem;color:var(--gray);margin-bottom:16px">告訴我們你的需求，我們幫你媒合最適合的設計師與施工團隊</p>
-            <a href="{{ url_for('contact', work_id=work['作品ID']) }}" class="btn btn-primary" style="width:100%;justify-content:center">
+            <a href="{{ url_for('contact', work_id=work.id) }}" class="btn btn-primary" style="width:100%;justify-content:center">
               <i class="bi bi-chat-dots"></i> 我想要類似的作品
             </a>
             <a href="tel:{{ contact_phone }}" class="btn btn-outline" style="width:100%;justify-content:center;margin-top:10px">
@@ -92,11 +92,11 @@
         {% for r in ratings %}
         <div class="review-item">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span class="stars" style="font-size:.95rem">{% for i in range(r['分數']|int) %}★{% endfor %}{% for i in range(5 - r['分數']|int) %}☆{% endfor %}</span>
-            <span style="font-weight:600;font-size:.9rem">{{ r['評分者姓名'] }}</span>
-            <span style="font-size:.78rem;color:var(--gray);margin-left:auto">{{ r['建立時間'] }}</span>
+            <span class="stars" style="font-size:.95rem">{% for i in range(r.score|int) %}★{% endfor %}{% for i in range(5 - r.score|int) %}☆{% endfor %}</span>
+            <span style="font-weight:600;font-size:.9rem">{{ r.name }}</span>
+            <span style="font-size:.78rem;color:var(--gray);margin-left:auto">{{ r.created_at.strftime('%Y-%m-%d') if r.created_at }}</span>
           </div>
-          {% if r['評語'] %}<p style="font-size:.88rem;color:var(--gray);margin:0">{{ r['評語'] }}</p>{% endif %}
+          {% if r.note %}<p style="font-size:.88rem;color:var(--gray);margin:0">{{ r.note }}</p>{% endif %}
         </div>
         {% endfor %}
       </div>
@@ -105,7 +105,8 @@
       <div id="rate" class="rate-form" style="margin-top:{% if ratings %}28px{% else %}0{% endif %}">
         <p style="font-weight:700;color:var(--g900);margin-bottom:4px">為這件作品留下評價</p>
         <p style="font-size:.82rem;color:var(--gray);margin-bottom:16px">曾施工或正在考慮的業主，您的評價對其他人很有幫助</p>
-        <form method="post" action="{{ url_for('rate_work', work_id=work['作品ID']) }}">
+        <form method="post" action="{{ url_for('rate_work', work_id=work.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:4px">姓名 *</label>

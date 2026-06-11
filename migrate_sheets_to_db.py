@@ -50,12 +50,15 @@ def _is_legacy_sha256(stored_hash):
 
 def _migrate_password(stored_hash):
     """
-    若是舊 SHA-256，回傳 ('legacy', sha256_hash)
-    若是新 pbkdf2，回傳 ('new', pbkdf2_hash)
+    若是舊 SHA-256，直接放入 password_hash（登入時 _verify_password 會自動升級）。
+    若是新 pbkdf2，直接使用。
+    無 hash（從未有登入憑證的帳號）→ 呼叫端改填 'NEEDS_REGISTER' 佔位：
+    不可登入，本人用原 Email 重新註冊時接回原帳號（2026-06-11 決策：讓大家重新辦）。
     """
-    if _is_legacy_sha256(stored_hash):
-        return 'legacy', stored_hash
-    return 'new', stored_hash
+    h = (stored_hash or '').strip()
+    if _is_legacy_sha256(h) or h.startswith('pbkdf2:'):
+        return 'direct', h
+    return 'needs_register', ''   # 呼叫端 or 'NEEDS_REGISTER' 接手
 
 # ── 工作表取得 ────────────────────────────────────────────
 def _get_ws(name):
@@ -99,12 +102,12 @@ def migrate_members():
             member_id = (row.get('會員ID') or row.get('id') or str(uuid4())[:8])[:12]
             pw_hash = row.get('密碼hash') or row.get('password_hash') or ''
 
-            pw_type, final_hash = _migrate_password(pw_hash)
+            _pw_type, final_hash = _migrate_password(pw_hash)
             member = Member(
                 id=member_id,
                 email=email,
-                password_hash=final_hash if pw_type == 'new' else 'MIGRATED_NEEDS_RESET',
-                legacy_pw_hash=final_hash if pw_type == 'legacy' else None,
+                password_hash=final_hash or 'NEEDS_REGISTER',
+                legacy_pw_hash=None,
                 name=row.get('姓名') or row.get('name') or '',
                 company=row.get('公司') or row.get('company') or '',
                 phone=row.get('電話') or row.get('phone') or '',
@@ -141,12 +144,12 @@ def migrate_suppliers():
             supplier_id = (row.get('供應商ID') or row.get('id') or str(uuid4())[:8])[:12]
             pw_hash = row.get('密碼hash') or row.get('password_hash') or ''
 
-            pw_type, final_hash = _migrate_password(pw_hash)
+            _pw_type, final_hash = _migrate_password(pw_hash)
             supplier = Supplier(
                 id=supplier_id,
                 email=email,
-                password_hash=final_hash if pw_type == 'new' else 'MIGRATED_NEEDS_RESET',
-                legacy_pw_hash=final_hash if pw_type == 'legacy' else None,
+                password_hash=final_hash or 'NEEDS_REGISTER',
+                legacy_pw_hash=None,
                 company=row.get('公司名稱') or row.get('company') or '',
                 contact_name=row.get('聯絡人') or row.get('contact_name') or '',
                 phone=row.get('電話') or row.get('phone') or '',
@@ -189,7 +192,7 @@ def migrate_works():
                 new_member = Member(
                     id=str(uuid4())[:8],
                     email=uploader_email,
-                    password_hash='MIGRATED_NEEDS_RESET',
+                    password_hash='NEEDS_REGISTER',
                     status='active',
                 )
                 db.session.add(new_member)
@@ -297,7 +300,7 @@ def migrate_materials():
                 new_supplier = Supplier(
                     id=str(uuid4())[:8],
                     email=supplier_email,
-                    password_hash='MIGRATED_NEEDS_RESET',
+                    password_hash='NEEDS_REGISTER',
                     status='active',
                 )
                 db.session.add(new_supplier)

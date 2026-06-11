@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}AI 模擬設計 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .ai-wrap{max-width:760px;margin:0 auto}
+  .chip-group{display:flex;flex-wrap:wrap;gap:10px}
+  .chip input{display:none}
+  .chip span{display:inline-block;padding:8px 18px;border-radius:24px;border:1.5px solid var(--border);
+             background:#fff;font-size:.9rem;font-weight:600;color:var(--gray);cursor:pointer;transition:.15s}
+  .chip input:checked + span{background:var(--g700);border-color:var(--g700);color:#fff}
+  .chip span:hover{border-color:var(--g500)}
+  .drop{border:2px dashed var(--g300);border-radius:var(--radius);padding:28px;text-align:center;
+        background:#fff;cursor:pointer;transition:.15s}
+  .drop:hover{border-color:var(--g500);background:var(--g50)}
+  .drop img{max-width:100%;max-height:320px;border-radius:10px;margin-top:12px}
+  #loading{display:none;position:fixed;inset:0;background:rgba(255,255,255,.92);z-index:999;
+           flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center}
+  .spinner{width:52px;height:52px;border:5px solid var(--g100);border-top-color:var(--g700);
+           border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="section">
+  <div class="container ai-wrap">
+    <h1 class="section-title"><i class="bi bi-stars"></i> AI 模擬設計</h1>
+    <p class="section-sub">上傳您家的庭院、陽台或空地照片，挑選喜歡的風格與元素，AI 立即為您生成景觀模擬設計圖。</p>
+
+    {% if not ai_ready %}
+    <div class="flash error">AI 影像服務目前尚未啟用，請稍後再試或直接<a href="{{ url_for('contact') }}">聯絡我們</a>。</div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="aiForm" class="card" style="padding:28px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label>1. 現場照片（jpg / png / webp，10MB 以內）</label>
+        <label class="drop" for="photoInput">
+          <i class="bi bi-cloud-arrow-up" style="font-size:1.8rem;color:var(--g500)"></i>
+          <div id="dropHint">點擊選擇照片</div>
+          <img id="preview" style="display:none" alt="">
+          <input type="file" id="photoInput" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif" style="display:none" required>
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label>2. 設計風格（單選）</label>
+        <div class="chip-group">
+          {% for s in styles %}
+          <label class="chip"><input type="radio" name="style" value="{{ s }}" {% if loop.first %}required{% endif %}><span>{{ s }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>3. 想加入的元素（可複選，最多 6 項）</label>
+        <div class="chip-group">
+          {% for e in elements %}
+          <label class="chip"><input type="checkbox" name="elements" value="{{ e }}"><span>{{ e }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <label>稱呼（選填）</label>
+          <input class="form-control" type="text" name="name" placeholder="例：王先生">
+        </div>
+        <div>
+          <label>聯絡電話（選填）</label>
+          <input class="form-control" type="text" name="phone" placeholder="方便後續報價聯繫">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" type="submit" {% if not ai_ready %}disabled{% endif %} style="width:100%;justify-content:center;padding:14px">
+        <i class="bi bi-magic"></i> 生成模擬設計圖
+      </button>
+      <p style="font-size:.78rem;color:var(--gray);margin-top:10px;text-align:center">
+        生成約需 30–60 秒。模擬圖僅供風格參考，實際設計以現場評估為準。
+      </p>
+    </form>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div style="font-weight:700;color:var(--g900);font-size:1.05rem">AI 正在為您生成模擬設計圖…</div>
+  <div style="color:var(--gray);font-size:.9rem">約需 30–60 秒，請勿關閉視窗</div>
+</div>
+
+<script>
+  const input = document.getElementById('photoInput');
+  input.addEventListener('change', () => {
+    const f = input.files[0];
+    if (!f) return;
+    const img = document.getElementById('preview');
+    img.src = URL.createObjectURL(f);
+    img.style.display = 'block';
+    document.getElementById('dropHint').textContent = f.name;
+  });
+  document.getElementById('aiForm').addEventListener('submit', () => {
+    document.getElementById('loading').style.display = 'flex';
+  });
+</script>
+{% endblock %}

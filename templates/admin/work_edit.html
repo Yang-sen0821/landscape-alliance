@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}審核作品 — {{ work['作品名稱'] }}{% endblock %}
+{% block title %}審核作品 — {{ work.name }}{% endblock %}
 {% block content %}
 <div class="section" style="padding-top:28px">
   <div class="container" style="max-width:760px">
@@ -8,7 +8,7 @@
     </a>
 
     <div class="section-title" style="margin-bottom:4px">審核作品</div>
-    <p style="color:var(--gray);margin-bottom:24px">上傳者：{{ work['上傳者Email'] }} &nbsp;·&nbsp; {{ work['建立時間'] }}</p>
+    <p style="color:var(--gray);margin-bottom:24px">上傳者：{{ work.uploader_email }} &nbsp;·&nbsp; {{ work.created_at.strftime('%Y-%m-%d') if work.created_at else '' }}</p>
 
     <!-- 照片預覽 -->
     {% if photos %}
@@ -24,11 +24,11 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label>作品名稱</label>
-          <input class="form-control" name="name" value="{{ work['作品名稱'] }}" required>
+          <input class="form-control" name="name" value="{{ work.name }}" required>
         </div>
         <div class="form-group">
           <label>標籤（逗號分隔）</label>
-          <input class="form-control" name="tags" value="{{ tags }}" id="tags-input">
+          <input class="form-control" name="tags" value="{{ work.tags or '' }}" id="tags-input">
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
             {% for t in ['陽台','庭院','屋頂花園','室內綠化','商業空間','植生牆','仿生植物','水景','石材','日式','現代','熱帶風','地中海'] %}
             <span style="padding:3px 10px;border-radius:20px;border:1.5px solid var(--border);font-size:.78rem;cursor:pointer;background:#fff;color:var(--gray)"
@@ -38,15 +38,15 @@
         </div>
         <div class="form-group">
           <label>完工金額（NT$）</label>
-          <input class="form-control" name="price" value="{{ work['完工金額'] }}" type="number">
+          <input class="form-control" name="price" value="{{ work.price }}" type="number">
         </div>
         <div class="form-group">
           <label>管理備註（不對外顯示）</label>
-          <textarea class="form-control" name="note" rows="2">{{ work.get('管理備註','') }}</textarea>
+          <textarea class="form-control" name="note" rows="2">{{ work.note or '' }}</textarea>
         </div>
 
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-          {% if work.get('狀態') != 'published' %}
+          {% if work.status != 'published' %}
           <button type="submit" name="action" value="approve" class="btn btn-primary">
             <i class="bi bi-check-circle"></i> 審核通過並上架
           </button>
@@ -59,7 +59,7 @@
             <i class="bi bi-eye-slash"></i> 下架
           </button>
           {% endif %}
-          {% if work.get('狀態') == 'pending' %}
+          {% if work.status == 'pending' %}
           <button type="submit" name="action" value="reject" class="btn btn-outline"
                   onclick="return confirm('確定要退回嗎？')">退回</button>
           {% endif %}

@@ -62,24 +62,24 @@
     {% if works %}
     <div class="works-grid">
       {% for w in works %}
-      {% set imgs = photo_urls(w.get('照片IDs','')) %}
-      <a href="{{ url_for('work_detail', work_id=w['作品ID']) }}" class="work-card card">
+      {% set imgs = photo_urls(w.photo_ids) %}
+      <a href="{{ url_for('work_detail', work_id=w.id) }}" class="work-card card">
         {% if imgs %}
-        <img class="work-thumb" src="{{ imgs[0] }}" alt="{{ w['作品名稱'] }}" loading="lazy">
+        <img class="work-thumb" src="{{ imgs[0] }}" alt="{{ w.name }}" loading="lazy">
         {% else %}
         <div class="work-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--g300);font-size:2.5rem">🌿</div>
         {% endif %}
         <div class="work-body">
-          <div class="work-name">{{ w['作品名稱'] }}</div>
+          <div class="work-name">{{ w.name }}</div>
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <span class="work-price">{{ fmt_price(w['完工金額']) }}</span>
-            {% set ra = rmap.get(w['作品ID']) %}
+            <span class="work-price">{{ fmt_price(w.price) }}</span>
+            {% set ra = rmap.get(w.id) %}
             {% if ra and ra[0] %}
             <span style="font-size:.82rem;color:#f4b400">★ {{ ra[0] }} <span style="color:var(--gray)">({{ ra[1] }})</span></span>
             {% endif %}
           </div>
           <div class="work-tags">
-            {% for t in w.get('標籤','').split(',') %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
+            {% for t in (w.tags or '').split(',') %}{% if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endif %}{% endfor %}
           </div>
         </div>
       </a>

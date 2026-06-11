@@ -29,25 +29,25 @@
       {% if mats_pending %}
       <div class="card">
         {% for m in mats_pending %}
-        {% set imgs = photo_urls(m.get('照片IDs','')) %}
+        {% set imgs = photo_urls(m.photo_ids) %}
         <div class="work-row">
           {% if imgs %}<img src="{{ imgs[0] }}" alt="">{% else %}<div style="width:72px;height:54px;border-radius:6px;background:var(--g100);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1.4rem">📦</div>{% endif %}
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700">{{ m['素材名稱'] }}</div>
+            <div style="font-weight:700">{{ m.name }}</div>
             <div style="font-size:.82rem;color:var(--gray)">
-              {{ m.get('供應商Email','') }} &nbsp;·&nbsp;
-              {{ m.get('規格尺寸','') }} &nbsp;·&nbsp; {{ m.get('單位','') }}
+              {{ m.supplier_email }} &nbsp;·&nbsp;
+              {{ m.spec or '' }} &nbsp;·&nbsp; {{ m.unit or '' }}
             </div>
             <div style="font-size:.85rem;font-weight:600;color:var(--g700);margin-top:2px">
-              {{ fmt_price(m.get('零售價','')) }}
+              {{ fmt_price(m.price or '') }}
             </div>
-            {% if m.get('標籤') %}
+            {% if m.tags %}
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
-              {% for t in m['標籤'].split(',') %}{% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
+              {% for t in m.tags.split(',') %}{% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
             </div>
             {% endif %}
           </div>
-          <form method="post" action="{{ url_for('admin_material', mat_id=m['素材ID']) }}" style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          <form method="post" action="{{ url_for('admin_material', mat_id=m.id) }}" style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
             <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm">上架</button>
             <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">退回</button>
           </form>
@@ -62,14 +62,14 @@
       <div style="margin-top:24px;font-size:.88rem;font-weight:600;color:var(--g700);margin-bottom:8px">已上架素材（{{ mats_active|length }} 件）</div>
       <div class="card">
         {% for m in mats_active %}
-        {% set imgs = photo_urls(m.get('照片IDs','')) %}
+        {% set imgs = photo_urls(m.photo_ids) %}
         <div class="work-row">
           {% if imgs %}<img src="{{ imgs[0] }}" alt="">{% endif %}
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700">{{ m['素材名稱'] }}</div>
-            <div style="font-size:.82rem;color:var(--gray)">{{ m.get('供應商Email','') }} &nbsp;·&nbsp; {{ m.get('規格尺寸','') }}</div>
+            <div style="font-weight:700">{{ m.name }}</div>
+            <div style="font-size:.82rem;color:var(--gray)">{{ m.supplier_email }} &nbsp;·&nbsp; {{ m.spec or '' }}</div>
           </div>
-          <form method="post" action="{{ url_for('admin_material', mat_id=m['素材ID']) }}" style="display:flex;gap:6px;flex-shrink:0">
+          <form method="post" action="{{ url_for('admin_material', mat_id=m.id) }}" style="display:flex;gap:6px;flex-shrink:0">
             <input type="text" name="extra_tags" placeholder="補充標籤（逗號分隔）" class="form-control" style="width:160px;font-size:.8rem;padding:6px 10px">
             <button type="submit" name="action" value="add_tags" class="btn btn-outline btn-sm">補標籤</button>
             <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">下架</button>
@@ -85,15 +85,15 @@
       {% if pending %}
       <div class="card">
         {% for w in pending %}
-        {% set imgs = photo_urls(w.get('照片IDs','')) %}
+        {% set imgs = photo_urls(w.photo_ids) %}
         <div class="work-row">
           {% if imgs %}<img src="{{ imgs[0] }}" alt="">{% endif %}
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700">{{ w['作品名稱'] }}</div>
-            <div style="font-size:.82rem;color:var(--gray)">{{ w['上傳者Email'] }} &nbsp;·&nbsp; {{ w['建立時間'] }}</div>
-            <div style="font-size:.82rem;margin-top:3px">{{ fmt_price(w['完工金額']) }}</div>
+            <div style="font-weight:700">{{ w.name }}</div>
+            <div style="font-size:.82rem;color:var(--gray)">{{ w.uploader_email }} &nbsp;·&nbsp; {{ w.created_at.strftime('%Y-%m-%d') if w.created_at else '' }}</div>
+            <div style="font-size:.82rem;margin-top:3px">{{ fmt_price(w.price or '') }}</div>
           </div>
-          <a href="{{ url_for('admin_work', work_id=w['作品ID']) }}" class="btn btn-primary btn-sm">審核</a>
+          <a href="{{ url_for('admin_work', work_id=w.id) }}" class="btn btn-primary btn-sm">審核</a>
         </div>
         {% endfor %}
       </div>
@@ -107,19 +107,19 @@
       {% if published %}
       <div class="card">
         {% for w in published %}
-        {% set imgs = photo_urls(w.get('照片IDs','')) %}
+        {% set imgs = photo_urls(w.photo_ids) %}
         <div class="work-row">
           {% if imgs %}<img src="{{ imgs[0] }}" alt="">{% endif %}
           <div style="flex:1;min-width:0">
-            <div style="font-weight:700">{{ w['作品名稱'] }}</div>
-            <div style="font-size:.82rem;color:var(--gray)">{{ fmt_price(w['完工金額']) }}</div>
+            <div style="font-weight:700">{{ w.name }}</div>
+            <div style="font-size:.82rem;color:var(--gray)">{{ fmt_price(w.price or '') }}</div>
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
-              {% for t in w.get('標籤','').split(',') %}{% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
+              {% for t in (w.tags or '').split(',') %}{% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
             </div>
           </div>
           <div style="display:flex;gap:6px">
-            <a href="{{ url_for('work_detail', work_id=w['作品ID']) }}" class="btn btn-outline btn-sm" target="_blank"><i class="bi bi-eye"></i></a>
-            <a href="{{ url_for('admin_work', work_id=w['作品ID']) }}" class="btn btn-outline btn-sm">編輯</a>
+            <a href="{{ url_for('work_detail', work_id=w.id) }}" class="btn btn-outline btn-sm" target="_blank"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('admin_work', work_id=w.id) }}" class="btn btn-outline btn-sm">編輯</a>
           </div>
         </div>
         {% endfor %}
@@ -133,16 +133,16 @@
     <div id="tab-contacts" class="tab-content">
       {% if contacts %}
       <div class="card">
-        {% for c in contacts|reverse %}
+        {% for c in contacts %}
         <div style="padding:14px;border-bottom:1px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:flex-start">
             <div>
-              <strong>{{ c['姓名'] }}</strong> &nbsp;<span style="color:var(--gray);font-size:.85rem">{{ c['電話'] }}</span>
-              {% if c['興趣作品ID'] %}<a href="{{ url_for('work_detail', work_id=c['興趣作品ID']) }}" style="font-size:.78rem;color:var(--g500);margin-left:8px">查看參考作品</a>{% endif %}
+              <strong>{{ c.name }}</strong> &nbsp;<span style="color:var(--gray);font-size:.85rem">{{ c.phone }}</span>
+              {% if c.work_id %}<a href="{{ url_for('work_detail', work_id=c.work_id) }}" style="font-size:.78rem;color:var(--g500);margin-left:8px">查看參考作品</a>{% endif %}
             </div>
-            <span style="font-size:.78rem;color:var(--gray)">{{ c['時間'] }}</span>
+            <span style="font-size:.78rem;color:var(--gray)">{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at else '' }}</span>
           </div>
-          {% if c['訊息'] %}<p style="font-size:.88rem;color:var(--gray);margin-top:6px">{{ c['訊息'] }}</p>{% endif %}
+          {% if c.message %}<p style="font-size:.88rem;color:var(--gray);margin-top:6px">{{ c.message }}</p>{% endif %}
         </div>
         {% endfor %}
       </div>

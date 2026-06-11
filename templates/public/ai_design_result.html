@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}AI 模擬設計結果 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:720px){.cmp-grid{grid-template-columns:1fr}}
+  .cmp-card img{width:100%;display:block;border-radius:10px;background:var(--g100);min-height:200px;object-fit:cover}
+  .cmp-label{font-weight:700;color:var(--g900);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="section">
+  <div class="container" style="max-width:980px">
+    <h1 class="section-title"><i class="bi bi-stars"></i> 您的 AI 模擬設計圖</h1>
+    <p class="section-sub">
+      風格：<span class="tag">{{ design.style }}</span>
+      {% for t in tags %}<span class="tag" style="margin-left:6px">{{ t }}</span>{% endfor %}
+    </p>
+
+    <div class="cmp-grid">
+      <div class="card cmp-card" style="padding:16px">
+        <div class="cmp-label"><i class="bi bi-camera"></i> 原始現場照</div>
+        <img src="{{ src_url }}" alt="原始現場照片" referrerpolicy="no-referrer">
+      </div>
+      <div class="card cmp-card" style="padding:16px">
+        <div class="cmp-label" style="color:var(--g700)"><i class="bi bi-magic"></i> AI 景觀模擬圖</div>
+        <img src="{{ gen_url }}" alt="AI 模擬設計圖" referrerpolicy="no-referrer">
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:28px;padding:28px;text-align:center">
+      <div style="font-weight:700;font-size:1.1rem;color:var(--g900);margin-bottom:6px">喜歡這個設計方向嗎？</div>
+      <p style="color:var(--gray);margin-bottom:18px">聯盟設計師可依此風格為您做現場評估與正式設計報價。</p>
+      <a class="btn btn-primary" href="{{ url_for('contact') }}"><i class="bi bi-chat-dots"></i> 免費諮詢</a>
+      <a class="btn btn-outline" href="{{ url_for('ai_design') }}" style="margin-left:10px"><i class="bi bi-arrow-repeat"></i> 再做一張</a>
+      <p style="font-size:.78rem;color:var(--gray);margin-top:14px">模擬圖僅供風格參考，實際設計以現場評估為準。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

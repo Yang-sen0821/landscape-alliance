@@ -31,7 +31,7 @@
   {% if materials %}
   <div class="card">
     {% for m in materials %}
-    {% set imgs = photo_urls(m.get('照片IDs','')) %}
+    {% set imgs = photo_urls(m.photo_ids) %}
     <div class="mat-row">
       {% if imgs %}
       <img src="{{ imgs[0] }}" alt="" style="width:80px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0">
@@ -40,35 +40,35 @@
       {% endif %}
 
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700">{{ m['素材名稱'] }}</div>
+        <div style="font-weight:700">{{ m.name }}</div>
         <div style="font-size:.82rem;color:var(--gray);margin-top:2px">
-          {% if m.get('品牌') %}{{ m['品牌'] }} &nbsp;·&nbsp; {% endif %}
-          {{ m.get('規格尺寸','') }} &nbsp;·&nbsp; {{ m.get('單位','') }}
+          {% if m.brand %}{{ m.brand }} &nbsp;·&nbsp; {% endif %}
+          {{ m.spec or '' }} &nbsp;·&nbsp; {{ m.unit or '' }}
         </div>
         <div style="font-size:.92rem;font-weight:700;color:var(--g700);margin-top:3px">
-          {{ fmt_price(m.get('零售價','')) }}
+          {{ fmt_price(m.price or '') }}
         </div>
-        {% if m.get('標籤') %}
+        {% if m.tags %}
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
-          {% for t in m['標籤'].split(',') %}
+          {% for t in m.tags.split(',') %}
           {% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}
           {% endfor %}
         </div>
         {% endif %}
-        {% if m.get('備註') %}
-        <div style="font-size:.8rem;color:#dc2626;margin-top:4px">退回原因：{{ m['備註'] }}</div>
+        {% if m.note %}
+        <div style="font-size:.8rem;color:#dc2626;margin-top:4px">退回原因：{{ m.note }}</div>
         {% endif %}
       </div>
 
       <div style="text-align:right;flex-shrink:0">
-        {% if m.get('狀態') == 'active' %}
+        {% if m.status == 'active' %}
         <span class="badge badge-published">已上架</span>
-        {% elif m.get('狀態') == 'rejected' %}
+        {% elif m.status == 'rejected' %}
         <span class="badge badge-rejected">已退回</span>
         {% else %}
         <span class="badge badge-pending">審核中</span>
         {% endif %}
-        <div style="font-size:.75rem;color:var(--gray);margin-top:4px">{{ m.get('上傳時間','')[:10] }}</div>
+        <div style="font-size:.75rem;color:var(--gray);margin-top:4px">{{ m.created_at.strftime('%Y-%m-%d') if m.created_at else '' }}</div>
       </div>
     </div>
     {% endfor %}

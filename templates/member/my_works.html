@@ -14,7 +14,7 @@
     {% if works %}
     <div style="display:flex;flex-direction:column;gap:14px">
       {% for w in works %}
-      {% set imgs = photo_urls(w.get('照片IDs','')) %}
+      {% set imgs = photo_urls(w.photo_ids) %}
       <div class="card" style="display:flex;align-items:center;gap:16px;padding:16px">
         {% if imgs %}
         <img src="{{ imgs[0] }}" style="width:80px;height:60px;object-fit:cover;border-radius:8px;flex-shrink:0">
@@ -22,12 +22,12 @@
         <div style="width:80px;height:60px;background:var(--g100);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🌿</div>
         {% endif %}
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;color:var(--g900)">{{ w['作品名稱'] }}</div>
-          <div style="font-size:.85rem;color:var(--gray);margin-top:2px">{{ fmt_price(w['完工金額']) }} &nbsp;·&nbsp; {{ w['建立時間'] }}</div>
+          <div style="font-weight:700;color:var(--g900)">{{ w.name }}</div>
+          <div style="font-size:.85rem;color:var(--gray);margin-top:2px">{{ fmt_price(w.price) }} &nbsp;·&nbsp; {{ w.created_at.strftime('%Y-%m-%d') if w.created_at }}</div>
         </div>
-        <span class="badge badge-{{ w.get('狀態','pending') }}">
-          {% if w.get('狀態') == 'published' %}已上架
-          {% elif w.get('狀態') == 'rejected' %}已退回
+        <span class="badge badge-{{ w.status or 'pending' }}">
+          {% if w.status == 'published' %}已上架
+          {% elif w.status == 'rejected' %}已退回
           {% else %}審核中{% endif %}
         </span>
       </div>
