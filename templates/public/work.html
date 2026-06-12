@@ -54,10 +54,15 @@
           <div class="price-big">{{ fmt_price(work.price) }}</div>
 
           {% if tags %}
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
             {% for t in tags %}<span class="tag">{{ t }}</span>{% endfor %}
           </div>
           {% endif %}
+
+          <a href="{{ url_for('ai_design', ref=work.id) }}" class="btn btn-outline"
+             style="width:100%;justify-content:center;margin-bottom:16px">
+            ✨ 以此作品風格，AI 模擬我家庭園
+          </a>
 
           {% if avg %}
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">

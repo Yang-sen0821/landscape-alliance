@@ -639,7 +639,7 @@ _NO_TEXT_RULE = ('STRICT RULE: the generated image must contain absolutely NO te
                  'no words, no letters, no numbers, no watermarks, no logos, no labels, '
                  'no captions, no annotations, no signatures. Pure photographic imagery only.')
 
-def _build_design_prompt(style, elements):
+def _build_design_prompt(style, elements, has_ref=False):
     style_en = AI_STYLE_TAGS.get(style, 'modern minimalist style')
     parts = [
         'Photorealistic landscape design simulation.',
@@ -647,6 +647,14 @@ def _build_design_prompt(style, elements):
         'Keep the original camera angle, perspective, buildings and property boundaries unchanged; '
         'redesign only the outdoor landscape areas.',
     ]
+    if has_ref:
+        parts.append(
+            'Two images are provided. The FIRST image is the client site photo: strictly '
+            'preserve its camera angle, perspective, buildings and property boundaries, and '
+            'transform only the landscape areas. The SECOND image is a completed project by '
+            'our own design team, provided purely as a style reference: follow its material '
+            'vocabulary, planting composition style and craftsmanship quality, but do NOT '
+            'copy its site layout or replace the client site with it.')
     elems_en = [AI_ELEMENT_TAGS[e] for e in elements if e in AI_ELEMENT_TAGS]
     if elems_en:
         parts.append('Incorporate the following elements naturally: ' + '; '.join(elems_en) + '.')
@@ -654,17 +662,30 @@ def _build_design_prompt(style, elements):
     parts.append(_NO_TEXT_RULE)
     return ' '.join(parts)
 
-def generate_design_image(photo_bytes, mime_type, style, elements):
-    """以 Gemini 影像模型將現場照片轉成景觀模擬設計圖，回傳 (bytes, mime)。"""
+def generate_design_image(photo_bytes, mime_type, style, elements,
+                          ref_bytes=None, ref_mime=None):
+    """以 Gemini 影像模型將現場照片轉成景觀模擬設計圖，回傳 (bytes, mime)。
+
+    可選 ref_bytes / ref_mime：本團隊完成作品照片，作為風格參照；
+    無參照時行為與舊版完全相同（向後相容）。
+    """
     key = _gemini_api_key()
     if not key:
         raise RuntimeError('AI 影像服務尚未啟用（未設定 GEMINI_API_KEY）')
+    parts = [
+        {'text': _build_design_prompt(style, elements, has_ref=bool(ref_bytes))},
+        {'inline_data': {'mime_type': mime_type,
+                         'data': base64.b64encode(photo_bytes).decode('ascii')}},
+    ]
+    if ref_bytes:
+        parts.append({'text': (
+            'Style reference image below — a completed landscape project by our design '
+            'team. Use it only for material vocabulary, planting style and craftsmanship '
+            'quality; do not copy its site layout.')})
+        parts.append({'inline_data': {'mime_type': ref_mime or 'image/jpeg',
+                                      'data': base64.b64encode(ref_bytes).decode('ascii')}})
     body = json.dumps({
-        'contents': [{'parts': [
-            {'text': _build_design_prompt(style, elements)},
-            {'inline_data': {'mime_type': mime_type,
-                             'data': base64.b64encode(photo_bytes).decode('ascii')}},
-        ]}],
+        'contents': [{'parts': parts}],
         'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']},
     }).encode('utf-8')
     url = (f'https://generativelanguage.googleapis.com/v1beta/models/'
@@ -850,15 +871,61 @@ def rate_work(work_id):
     return redirect(url_for('work_detail', work_id=work_id) + '#ratings')
 
 # ── AI 模擬設計（業主端，免登入） ──────────────────────────────
-@app.route('/ai-design', methods=['GET', 'POST'])
-def ai_design():
+def _work_tag_list(work):
+    return [t.strip() for t in (work.tags or '').split(',') if t.strip()]
+
+def _fetch_work_ref_photo(work):
+    """抓參照作品第一張照片 bytes；任何失敗或 >10MB 回 None（絕不讓生成失敗）。"""
+    urls = photo_urls(work.photo_ids, size='w1000')
+    if not urls:
+        return None
+    try:
+        req = _u_req.Request(urls[0], headers={'User-Agent': 'Mozilla/5.0'})
+        with _u_req.urlopen(req, timeout=30) as resp:
+            data = resp.read(_MAX_FILE_BYTES + 1)
+        if not data or len(data) > _MAX_FILE_BYTES:
+            return None
+        return data
+    except Exception:
+        return None
+
+def _ai_design_context(ref_work_id=None):
+    """組 /ai-design 模板 context：標籤資料 + 側欄作品清單 + 參照作品（可選）。"""
+    sidebar_works = []
+    for w in (Work.query.filter_by(status='published')
+              .order_by(Work.created_at.desc()).limit(24).all()):
+        thumbs = photo_urls(w.photo_ids, size='w600')
+        sidebar_works.append({'id': w.id, 'name': w.name,
+                              'tags': _work_tag_list(w),
+                              'thumb': thumbs[0] if thumbs else ''})
     ctx = dict(styles=list(AI_STYLE_TAGS.keys()),
                elements=list(AI_ELEMENT_TAGS.keys()),
                element_groups=AI_ELEMENT_GROUPS,
                element_conflicts={'groups': AI_ELEMENT_EXCLUSIVE_GROUPS,
                                   'pairs': AI_ELEMENT_CONFLICT_PAIRS},
-               ai_ready=bool(_gemini_api_key()))
+               ai_ready=bool(_gemini_api_key()),
+               sidebar_works=sidebar_works,
+               ref_work=None, ref_style=None, ref_elements=[])
+    if ref_work_id:
+        w = Work.query.filter_by(id=ref_work_id, status='published').first()
+        if w:  # 非 published 一律忽略
+            tags = _work_tag_list(w)
+            thumbs = photo_urls(w.photo_ids, size='w600')
+            ctx['ref_work'] = {'id': w.id, 'name': w.name, 'tags': tags,
+                               'thumb': thumbs[0] if thumbs else ''}
+            # 預選風格：work.tags 中第一個命中 AI_STYLE_TAGS 的
+            ctx['ref_style'] = next((t for t in tags if t in AI_STYLE_TAGS), None)
+            # 預勾元素：命中 AI_ELEMENT_TAGS，依表單順序過互斥防呆，上限 6
+            hits = {t for t in tags if t in AI_ELEMENT_TAGS}
+            form_order = [k for _, ks in AI_ELEMENT_GROUPS for k in ks]
+            ctx['ref_elements'] = _filter_conflicting_elements(
+                [k for k in form_order if k in hits])[:6]
+    return ctx
+
+@app.route('/ai-design', methods=['GET', 'POST'])
+def ai_design():
     if request.method == 'POST':
+        ctx = _ai_design_context()
         # Rate limit: 3 AI generations per IP per day (86400 seconds)
         if not _rl_check('ai_design', max_calls=3, window_seconds=86400):
             flash('今日 AI 設計生成次數已達上限（每日 3 次），歡迎來電洽詢 ' + CONTACT_PHONE, 'error')
@@ -888,8 +955,21 @@ def ai_design():
             return render_template('public/ai_design.html', **ctx)
         src_mime = photo.content_type or f'image/{"jpeg" if ext == "jpg" else ext}'
 
+        # 參照作品（可選）：抓不到圖就放棄參照繼續生成，絕不讓整個生成失敗
+        ref_bytes = ref_mime = None
+        ref_used_id = None
+        ref_form_id = request.form.get('ref_work_id', '').strip()
+        if ref_form_id:
+            ref_w = Work.query.filter_by(id=ref_form_id, status='published').first()
+            if ref_w:
+                ref_bytes = _fetch_work_ref_photo(ref_w)
+                if ref_bytes:
+                    ref_mime = 'image/jpeg'
+                    ref_used_id = ref_w.id
+
         try:
-            gen_bytes, gen_mime = generate_design_image(src_bytes, src_mime, style, chosen)
+            gen_bytes, gen_mime = generate_design_image(src_bytes, src_mime, style, chosen,
+                                                        ref_bytes=ref_bytes, ref_mime=ref_mime)
         except Exception as e:
             flash(f'AI 生成失敗：{e}', 'error')
             return render_template('public/ai_design.html', **ctx)
@@ -908,7 +988,8 @@ def ai_design():
             owner_phone=phone,
             owner_email=current_user() or '',
             style=style,
-            tags=','.join(chosen),
+            # ref:<work_id> 以標籤形式記錄（不加新欄位）；結果頁顯示時過濾
+            tags=','.join(chosen + ([f'ref:{ref_used_id}'] if ref_used_id else [])),
             source_photo_id=src_id,
             result_photo_id=gen_id,
             created_at=datetime.utcnow(),
@@ -916,7 +997,8 @@ def ai_design():
         db.session.add(design)
         db.session.commit()
         return redirect(url_for('ai_design_result', design_id=design_id))
-    return render_template('public/ai_design.html', **ctx)
+    return render_template('public/ai_design.html',
+                           **_ai_design_context(request.args.get('ref', '').strip()))
 
 @app.route('/ai-design/<design_id>')
 def ai_design_result(design_id):
@@ -925,7 +1007,8 @@ def ai_design_result(design_id):
         abort(404)
     src_url = photo_urls(design.source_photo_id, size='w1000')[0]
     gen_url = photo_urls(design.result_photo_id, size='w1000')[0]
-    tags = [t for t in (design.tags or '').split(',') if t]
+    # ref:<work_id> 是內部記錄用標籤，不對外顯示
+    tags = [t for t in (design.tags or '').split(',') if t and not t.startswith('ref:')]
     return render_template('public/ai_design_result.html', design=design,
                            src_url=src_url, gen_url=gen_url, tags=tags,
                            contact_phone=CONTACT_PHONE)

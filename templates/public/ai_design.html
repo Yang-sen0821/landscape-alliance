@@ -2,7 +2,9 @@
 {% block title %}AI 模擬設計 — 台灣景觀聯盟{% endblock %}
 {% block head %}
 <style>
-  .ai-wrap{max-width:760px;margin:0 auto}
+  .ai-wrap{max-width:1100px;margin:0 auto}
+  .ai-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+  @media(max-width:900px){.ai-layout{grid-template-columns:1fr}}
   .chip-group{display:flex;flex-wrap:wrap;gap:10px}
   .chip input{display:none}
   .chip span{display:inline-block;padding:8px 18px;border-radius:24px;border:1.5px solid var(--border);
@@ -21,6 +23,25 @@
   .spinner{width:52px;height:52px;border:5px solid var(--g100);border-top-color:var(--g700);
            border-radius:50%;animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* 參照作品卡 */
+  .ref-card{display:flex;align-items:center;gap:12px;background:var(--g50);
+            border:1.5px solid var(--g300);border-radius:12px;padding:12px 14px;margin-bottom:20px}
+  .ref-card img{width:72px;height:54px;object-fit:cover;border-radius:8px;flex-shrink:0;background:var(--g100)}
+  /* 推薦作品側欄 */
+  .ref-sidebar{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+  .ref-sidebar h2{font-size:1.02rem;font-weight:700;color:var(--g900);margin-bottom:4px}
+  .ref-list{display:flex;flex-direction:column;gap:14px;margin-top:14px;max-height:1100px;overflow-y:auto}
+  .ref-pick{border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:.15s}
+  .ref-pick.selected{border-color:var(--g700);box-shadow:0 0 0 2px var(--g300)}
+  .ref-pick img{width:100%;height:120px;object-fit:cover;display:block;background:var(--g50)}
+  .ref-noimg{width:100%;height:120px;display:flex;align-items:center;justify-content:center;
+             font-size:2rem;color:var(--g300);background:var(--g50)}
+  .ref-body{padding:10px 12px 12px}
+  .ref-name{font-size:.88rem;font-weight:700;color:var(--g900);margin-bottom:6px}
+  .ref-tags{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+  .ref-use{width:100%;justify-content:center;font-size:.82rem;padding:7px 10px}
+  .ref-empty{text-align:center;color:var(--gray);font-size:.88rem;line-height:1.7;
+             background:var(--g50);border-radius:12px;padding:24px 14px;margin-top:14px}
 </style>
 {% endblock %}
 {% block content %}
@@ -33,8 +54,20 @@
     <div class="flash error">AI 影像服務目前尚未啟用，請稍後再試或直接<a href="{{ url_for('contact') }}">聯絡我們</a>。</div>
     {% endif %}
 
+    <div class="ai-layout">
     <form method="post" enctype="multipart/form-data" id="aiForm" class="card" style="padding:28px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="ref_work_id" id="refWorkId" value="{{ ref_work.id if ref_work else '' }}">
+
+      <div id="refCard" class="ref-card" {% if not ref_work %}style="display:none"{% endif %}>
+        <img id="refThumb" src="{{ ref_work.thumb if ref_work else '' }}" alt="">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.75rem;font-weight:700;color:var(--g500);letter-spacing:.05em">參照作品</div>
+          <div id="refName" style="font-weight:700;color:var(--g900);font-size:.95rem">{{ ref_work.name if ref_work else '' }}</div>
+          <div style="font-size:.78rem;color:var(--gray)">AI 會沿用此作品的材料與工藝風格</div>
+        </div>
+        <button type="button" id="refRemove" class="btn btn-outline" style="font-size:.8rem;padding:6px 12px;flex-shrink:0">移除參照</button>
+      </div>
 
       <div class="form-group">
         <label>1. 現場照片（jpg / png / webp，10MB 以內）</label>
@@ -50,7 +83,7 @@
         <label>2. 設計風格（單選）</label>
         <div class="chip-group">
           {% for s in styles %}
-          <label class="chip"><input type="radio" name="style" value="{{ s }}" {% if loop.first %}required{% endif %}><span>{{ s }}</span></label>
+          <label class="chip"><input type="radio" name="style" value="{{ s }}" {% if loop.first %}required{% endif %} {% if ref_style == s %}checked{% endif %}><span>{{ s }}</span></label>
           {% endfor %}
         </div>
       </div>
@@ -61,7 +94,7 @@
         <div class="elem-group-title">{{ group_name }}</div>
         <div class="chip-group">
           {% for e in group_items %}
-          <label class="chip"><input type="checkbox" name="elements" value="{{ e }}"><span>{{ e }}</span></label>
+          <label class="chip"><input type="checkbox" name="elements" value="{{ e }}" {% if e in ref_elements %}checked{% endif %}><span>{{ e }}</span></label>
           {% endfor %}
         </div>
         {% endfor %}
@@ -85,6 +118,40 @@
         生成約需 30–60 秒。模擬圖僅供風格參考，實際設計以現場評估為準。
       </p>
     </form>
+
+    <aside class="ref-sidebar">
+      <h2>🌿 參考我們的實際作品</h2>
+      <p style="font-size:.8rem;color:var(--gray);margin:0">點「參照此作品」，AI 會以該作品的風格與工藝生成您家的模擬圖。勾選風格或元素可即時篩選。</p>
+      {% if sidebar_works %}
+      <div class="ref-list" id="refList">
+        {% for w in sidebar_works %}
+        <div class="ref-pick" data-work-id="{{ w.id }}" data-name="{{ w.name }}"
+             data-thumb="{{ w.thumb }}" data-tags="{{ w.tags | join(',') }}">
+          {% if w.thumb %}
+          <img src="{{ w.thumb }}" alt="{{ w.name }}" loading="lazy">
+          {% else %}
+          <div class="ref-noimg">🌿</div>
+          {% endif %}
+          <div class="ref-body">
+            <div class="ref-name">{{ w.name }}</div>
+            {% if w.tags %}
+            <div class="ref-tags">{% for t in w.tags[:4] %}<span class="tag">{{ t }}</span>{% endfor %}</div>
+            {% endif %}
+            <button type="button" class="btn btn-outline ref-use">參照此作品</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div id="refListEmpty" class="ref-empty" style="display:none">
+        沒有符合目前選擇的作品<br>調整風格或元素試試
+      </div>
+      {% else %}
+      <div class="ref-empty">
+        作品陸續上架中，敬請期待 🌱<br>您仍可直接上傳照片生成模擬圖
+      </div>
+      {% endif %}
+    </aside>
+    </div>
   </div>
 </div>
 
@@ -123,6 +190,7 @@
   }
 
   const elementBoxes = Array.from(document.querySelectorAll('input[name="elements"]'));
+  const styleRadios  = Array.from(document.querySelectorAll('input[name="style"]'));
 
   // 每次 change 重算全部：先全部顯示，再依「已勾選項」隱藏與其衝突的選項。
   // 某元素只有在沒有任何已勾選元素與它衝突時才會恢復顯示。
@@ -134,7 +202,94 @@
     });
   }
 
-  elementBoxes.forEach(b => b.addEventListener('change', refreshConflictVisibility));
+  // ── 推薦作品側欄：參照 + 即時篩選 ─────────────────────────
+  const STYLE_KEYS   = {{ styles | tojson }};
+  const ELEMENT_KEYS = {{ elements | tojson }};
+  const refInput  = document.getElementById('refWorkId');
+  const refCard   = document.getElementById('refCard');
+  const refCards  = Array.from(document.querySelectorAll('.ref-pick'));
+
+  function markSelectedCard() {
+    refCards.forEach(c => {
+      const on = !!refInput.value && c.dataset.workId === refInput.value;
+      c.classList.toggle('selected', on);
+      c.querySelector('.ref-use').textContent = on ? '✓ 參照中（點此取消）' : '參照此作品';
+    });
+  }
+
+  function setRef(id, name, thumb) {
+    refInput.value = id;
+    document.getElementById('refName').textContent = name;
+    document.getElementById('refThumb').src = thumb || '';
+    refCard.style.display = '';
+    markSelectedCard();
+  }
+
+  function clearRef() {
+    refInput.value = '';
+    refCard.style.display = 'none';
+    markSelectedCard();
+  }
+  document.getElementById('refRemove').addEventListener('click', clearRef);
+
+  // 把作品命中詞彙表的標籤套用到表單：風格取第一個命中、元素依表單順序預勾，
+  // 互斥交給隱藏邏輯（被隱藏的選項直接跳過），上限 6。
+  function applyWorkTags(tags) {
+    const styleHit = tags.find(t => STYLE_KEYS.includes(t));
+    if (styleHit) {
+      const radio = styleRadios.find(r => r.value === styleHit);
+      if (radio && !radio.checked) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    const tagSet = new Set(tags.filter(t => ELEMENT_KEYS.includes(t)));
+    let count = elementBoxes.filter(b => b.checked).length;
+    for (const b of elementBoxes) {   // 依表單順序
+      if (count >= 6) break;
+      if (b.checked || !tagSet.has(b.value)) continue;
+      if (b.closest('label').style.display === 'none') continue;  // 互斥隱藏中 → 跳過
+      b.checked = true;
+      count++;
+      refreshConflictVisibility();    // 預勾後立即重算，後續衝突項會被隱藏
+    }
+    refreshSidebarFilter();
+  }
+
+  refCards.forEach(card => {
+    card.querySelector('.ref-use').addEventListener('click', () => {
+      if (refInput.value === card.dataset.workId) { clearRef(); return; }
+      setRef(card.dataset.workId, card.dataset.name, card.dataset.thumb);
+      applyWorkTags((card.dataset.tags || '').split(',').filter(Boolean));
+    });
+  });
+
+  // 即時篩選：已選風格/元素與卡片標籤至少一個交集才顯示；什麼都沒選時全部顯示
+  function refreshSidebarFilter() {
+    const sel = [];
+    const sr = styleRadios.find(r => r.checked);
+    if (sr) sel.push(sr.value);
+    elementBoxes.filter(b => b.checked).forEach(b => sel.push(b.value));
+    let visible = 0;
+    refCards.forEach(c => {
+      const tags = (c.dataset.tags || '').split(',').filter(Boolean);
+      const show = sel.length === 0 || tags.some(t => sel.includes(t));
+      c.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    const empty = document.getElementById('refListEmpty');
+    if (empty) empty.style.display = (refCards.length && !visible) ? '' : 'none';
+  }
+
+  elementBoxes.forEach(b => b.addEventListener('change', () => {
+    refreshConflictVisibility();
+    refreshSidebarFilter();
+  }));
+  styleRadios.forEach(r => r.addEventListener('change', refreshSidebarFilter));
+
+  // 初始重算：伺服器端預選（?ref=）後也要立即套用互斥隱藏與篩選
   refreshConflictVisibility();
+  refreshSidebarFilter();
+  markSelectedCard();
 </script>
 {% endblock %}
