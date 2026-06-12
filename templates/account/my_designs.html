@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}我的模擬圖 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .designs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
+  .design-card{transition:.2s;text-decoration:none;color:inherit;display:block}
+  .design-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(0,0,0,.12)}
+  .design-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--g100);display:block}
+  .design-body{padding:14px}
+  .design-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="section" style="padding-top:32px">
+  <div class="container">
+    <div class="section-title"><i class="bi bi-images"></i> 我的模擬圖</div>
+    <p class="section-sub">您生成過的 AI 景觀模擬設計圖都在這裡（由新到舊）</p>
+
+    {% if designs %}
+    <div class="designs-grid">
+      {% for d in designs %}
+      {% set thumbs = photo_urls(d.result_photo_id) %}
+      <a href="{{ url_for('ai_design_result', design_id=d.id) }}" class="design-card card">
+        {% if thumbs %}
+        <img class="design-thumb" src="{{ thumbs[0] }}" alt="AI 模擬圖" loading="lazy">
+        {% else %}
+        <div class="design-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--g300);font-size:2.5rem">🌿</div>
+        {% endif %}
+        <div class="design-body">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:700;color:var(--g900)">{{ d.style or 'AI 模擬設計' }}</span>
+            <span style="font-size:.78rem;color:var(--gray)">{{ d.created_at.strftime('%Y-%m-%d') if d.created_at }}</span>
+          </div>
+          <div class="design-tags">
+            {% for t in (d.tags or '').split(',') %}{% if t.strip() and not t.strip().startswith('ref:') %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:80px 0;color:var(--gray)">
+      <div style="font-size:3rem;margin-bottom:12px">✨</div>
+      <p>還沒有生成過模擬圖</p>
+      <p style="font-size:.88rem;margin-top:4px">上傳您家的照片，AI 立即為您生成景觀模擬設計圖</p>
+      <a href="{{ url_for('ai_design') }}" class="btn btn-primary" style="margin-top:20px">
+        <i class="bi bi-stars"></i> 立即生成模擬圖
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

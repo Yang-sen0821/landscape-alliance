@@ -18,6 +18,15 @@
   .review-item{border-bottom:1px solid var(--border);padding:12px 0}
   .review-item:last-child{border-bottom:none}
   .rate-form{background:var(--g50);border:1.5px solid var(--g300);border-radius:12px;padding:20px;margin-top:28px}
+  /* 相似作品推薦（沿用作品列表卡片樣式） */
+  .works-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:20px}
+  .work-card{transition:.2s;text-decoration:none;color:inherit}
+  .work-card:hover{transform:translateY(-3px);box-shadow:0 8px 30px rgba(0,0,0,.12)}
+  .work-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--g100)}
+  .work-body{padding:14px}
+  .work-name{font-weight:700;margin-bottom:6px;color:var(--g900)}
+  .work-price{font-weight:700;color:var(--g700)}
+  .work-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
 </style>
 {% endblock %}
 
@@ -139,6 +148,40 @@
         </form>
       </div>
     </div>
+
+    {% if similar %}
+    <!-- 相似作品推薦 -->
+    <div id="similar" style="margin-top:48px">
+      <h2 style="font-size:1.2rem;font-weight:700;color:var(--g900);margin-bottom:16px">
+        <i class="bi bi-stars" style="color:var(--g500)"></i> 相似作品推薦
+      </h2>
+      <div class="works-grid">
+        {% for w in similar %}
+        {% set imgs = photo_urls(w.photo_ids) %}
+        <a href="{{ url_for('work_detail', work_id=w.id) }}" class="work-card card">
+          {% if imgs %}
+          <img class="work-thumb" src="{{ imgs[0] }}" alt="{{ w.name }}" loading="lazy">
+          {% else %}
+          <div class="work-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--g300);font-size:2.5rem">🌿</div>
+          {% endif %}
+          <div class="work-body">
+            <div class="work-name">{{ w.name }}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="work-price">{{ fmt_price(w.price) }}</span>
+              {% set ra = srmap.get(w.id) %}
+              {% if ra and ra[0] %}
+              <span style="font-size:.82rem;color:#f4b400">★ {{ ra[0] }} <span style="color:var(--gray)">({{ ra[1] }})</span></span>
+              {% endif %}
+            </div>
+            <div class="work-tags">
+              {% for t in (w.tags or '').split(',') %}{% if t.strip() %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
+            </div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 

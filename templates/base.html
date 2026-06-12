@@ -107,13 +107,20 @@
           <a href="{{ url_for('upload') }}">上傳作品</a>
           <a href="{{ url_for('my_profile') }}" class="nav-hide">公司資料</a>
           <a href="{{ url_for('my_works') }}" class="nav-hide">我的作品</a>
-          <a href="{{ url_for('logout') }}" class="nav-hide">登出</a>
+          <a href="{{ url_for('logout') }}" class="nav-hide">登出夥伴</a>
         {% else %}
           {% if not current_supplier() %}
           <a href="{{ url_for('supplier_login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">供應商入口</a>
           {% endif %}
-          <a href="{{ url_for('login') }}">登入</a>
-          <a href="{{ url_for('register') }}" class="btn-nav">加入聯盟</a>
+          <a href="{{ url_for('login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">夥伴登入</a>
+        {% endif %}
+
+        {% if current_customer() %}
+          <a href="{{ url_for('my_designs') }}"><i class="bi bi-images"></i> 我的模擬圖</a>
+          <a href="{{ url_for('account_logout') }}" style="color:var(--gray)">登出</a>
+        {% else %}
+          <a href="{{ url_for('account_login') }}">登入</a>
+          <a href="{{ url_for('account_register') }}" class="btn-nav">註冊</a>
         {% endif %}
       </div>
     </div>

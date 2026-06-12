@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import os, io, json, uuid, time, hashlib, base64
 import urllib.request as _u_req
-from datetime import datetime
+import urllib.parse as _u_parse
+from datetime import datetime, timedelta
 from functools import wraps
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, flash, abort)
@@ -62,6 +63,12 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 ADMIN_EMAIL     = os.environ.get('ADMIN_EMAIL', 'g2349311@gmail.com')
 DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID', '1qCzsnVGQl6RAQprtWuh4aCMt98J59BkD')
 CONTACT_PHONE   = os.environ.get('CONTACT_PHONE', '0910-006-229')
+
+# ── 客戶帳號體系（與聯盟夥伴完全分離）外部服務金鑰 ──────────────
+# 未設定時優雅降級：Google 按鈕不渲染、reCAPTCHA 跳過驗證且不渲染 widget
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '').strip()
+RECAPTCHA_SITE_KEY     = os.environ.get('RECAPTCHA_SITE_KEY', '').strip()
+RECAPTCHA_SECRET_KEY   = os.environ.get('RECAPTCHA_SECRET_KEY', '').strip()
 
 MASTER_TAGS = {
     '設計風格': ['現代簡約', '日式禪風', '南洋熱帶', '地中海風', '自然鄉村', '工業風'],
@@ -324,6 +331,27 @@ class RateLimit(db.Model):
     endpoint = db.Column(db.String(60), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
+class AppUser(db.Model):
+    """終端客戶帳號（業主），與聯盟夥伴 Member / Supplier 完全分離。"""
+    __tablename__ = 'app_users'
+    id = db.Column(db.String(12), primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    name = db.Column(db.String(120))
+    password_hash = db.Column(db.String(255), nullable=True)  # Google-only 帳號可為空
+    google_sub = db.Column(db.String(64), unique=True, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class UserEvent(db.Model):
+    """行為事件記錄（瀏覽作品 / AI 生成等），供推薦與後台統計使用。"""
+    __tablename__ = 'user_events'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    etype = db.Column(db.String(40), nullable=False, index=True)
+    user_email = db.Column(db.String(120), nullable=True)
+    session_key = db.Column(db.String(64))   # 匿名訪客：簽名 session cookie 內的隨機 id
+    work_id = db.Column(db.String(12), nullable=True, index=True)
+    tags = db.Column(db.Text)                # 事件當下作品標籤快照（CSV）
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
 # ── Auth helpers ──────────────────────────────────────────────
 def _safe_redirect(nxt, default):
     """Only allow relative on-site paths; reject open-redirect attempts."""
@@ -467,6 +495,103 @@ def _rl_check(endpoint, max_calls, window_seconds):
     except Exception:
         return True  # fail open — don't break the site
 
+# ── Customer (AppUser) helpers ─────────────────────────────────
+def _new_id():
+    return str(uuid.uuid4()).replace('-', '')[:12]
+
+def current_customer():
+    """客戶登入狀態（session['customer_email']），與夥伴 session['email'] 完全分離。"""
+    return session.get('customer_email')
+
+def find_app_user(email):
+    return AppUser.query.filter_by(email=(email or '').lower()).first()
+
+def customer_required(f):
+    @wraps(f)
+    def wrapped(*a, **kw):
+        if not current_customer():
+            return redirect(url_for('account_login', next=request.path))
+        return f(*a, **kw)
+    return wrapped
+
+def _recaptcha_enabled():
+    return bool(RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY)
+
+def _verify_recaptcha(response_token):
+    """reCAPTCHA v2 後端驗證。金鑰未設定時一律通過（優雅降級）。"""
+    if not _recaptcha_enabled():
+        return True
+    if not response_token:
+        return False
+    try:
+        body = _u_parse.urlencode({
+            'secret': RECAPTCHA_SECRET_KEY,
+            'response': response_token,
+            'remoteip': _get_client_ip(),
+        }).encode('utf-8')
+        req = _u_req.Request('https://www.google.com/recaptcha/api/siteverify', data=body)
+        with _u_req.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        return bool(data.get('success'))
+    except Exception:
+        return False  # 驗證服務異常時保守拒絕，請使用者重試
+
+def _google_verify_id_token(credential):
+    """以 Google tokeninfo 端點驗證 GIS ID token（含簽章與效期），回傳 claims dict。"""
+    url = ('https://oauth2.googleapis.com/tokeninfo?id_token='
+           + _u_parse.quote(credential, safe=''))
+    req = _u_req.Request(url)
+    with _u_req.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
+
+def _google_login_uri(nxt=''):
+    """GIS 按鈕的 data-login_uri（絕對網址；Render 走 proxy 須強制 https）。"""
+    if not GOOGLE_OAUTH_CLIENT_ID:
+        return ''
+    kwargs = {'_external': True}
+    if nxt:
+        kwargs['next'] = nxt
+    uri = url_for('account_google', **kwargs)
+    if _is_render and uri.startswith('http://'):
+        uri = 'https://' + uri[len('http://'):]
+    return uri
+
+@app.context_processor
+def _customer_template_vars():
+    return dict(
+        google_client_id=GOOGLE_OAUTH_CLIENT_ID,
+        recaptcha_site_key=(RECAPTCHA_SITE_KEY if _recaptcha_enabled() else ''),
+    )
+
+# ── 行為事件記錄 ────────────────────────────────────────────────
+def _event_session_key():
+    """匿名訪客識別：首訪發放隨機 id，存於簽名 session cookie。"""
+    sk = session.get('event_sk')
+    if not sk:
+        sk = uuid.uuid4().hex
+        session['event_sk'] = sk
+    return sk
+
+def _log_event(etype, work_id=None, tags=None, user_email=None):
+    """寫入一筆行為事件；任何失敗 rollback 後吞掉，絕不影響頁面。"""
+    try:
+        if user_email is None:
+            user_email = current_customer() or current_user() or None
+        db.session.add(UserEvent(
+            etype=etype,
+            user_email=user_email,
+            session_key=_event_session_key(),
+            work_id=work_id,
+            tags=tags,
+            created_at=datetime.utcnow(),
+        ))
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
 # ── Supplier helpers ───────────────────────────────────────────
 def find_supplier(email):
     return Supplier.query.filter_by(email=email.lower()).first()
@@ -543,6 +668,7 @@ app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
                              is_admin=is_admin, current_user=current_user,
                              avg_rating=avg_rating,
                              current_supplier=current_supplier,
+                             current_customer=current_customer,
                              master_tags=MASTER_TAGS,
                              tw_counties=TW_COUNTIES)
 
@@ -814,13 +940,16 @@ def work_detail(work_id):
     work = Work.query.filter_by(id=work_id, status='published').first()
     if not work:
         abort(404)
+    _log_event('work_view', work_id=work_id, tags=work.tags or '')
     photos  = photo_urls(work.photo_ids, size='w1000')
     tags    = [t.strip() for t in (work.tags or '').split(',') if t.strip()]
     ratings = get_ratings(work_id)
     avg, cnt = avg_rating(work_id)
+    similar = _similar_works(work)
     return render_template('public/work.html', work=work, photos=photos, tags=tags,
                            contact_phone=CONTACT_PHONE,
-                           ratings=ratings, avg=avg, cnt=cnt)
+                           ratings=ratings, avg=avg, cnt=cnt,
+                           similar=similar, srmap=ratings_map(similar))
 
 @app.route('/work/<work_id>/rate', methods=['POST'])
 def rate_work(work_id):
@@ -870,9 +999,23 @@ def rate_work(work_id):
     flash('感謝您的評價！', 'success')
     return redirect(url_for('work_detail', work_id=work_id) + '#ratings')
 
-# ── AI 模擬設計（業主端，免登入） ──────────────────────────────
 def _work_tag_list(work):
     return [t.strip() for t in (work.tags or '').split(',') if t.strip()]
+
+def _similar_works(work, limit=4):
+    """相似作品推薦：標籤交集數×2 +（scale 相同 +1），分數 0 不列，取前 limit。"""
+    base = set(_work_tag_list(work))
+    scored = []
+    for w in Work.query.filter(Work.status == 'published', Work.id != work.id).all():
+        score = len(base & set(_work_tag_list(w))) * 2
+        if (work.scale or '').strip() and (w.scale or '').strip() == (work.scale or '').strip():
+            score += 1
+        if score > 0:
+            scored.append((score, w))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [w for _, w in scored[:limit]]
+
+# ── AI 模擬設計（業主端，登入制） ──────────────────────────────
 
 def _fetch_work_ref_photo(work):
     """抓參照作品第一張照片 bytes；任何失敗或 >10MB 回 None（絕不讓生成失敗）。"""
@@ -906,6 +1049,11 @@ def _ai_design_context(ref_work_id=None):
                ai_ready=bool(_gemini_api_key()),
                sidebar_works=sidebar_works,
                ref_work=None, ref_style=None, ref_elements=[])
+    # 客戶登入狀態：姓名自動帶入 + 未登入提示卡的 next 連結（含 ref 參數）
+    cust = find_app_user(current_customer()) if current_customer() else None
+    ctx['customer_name'] = (cust.name or '') if cust else ''
+    nxt = request.full_path if request.method == 'GET' else url_for('ai_design')
+    ctx['login_next'] = (nxt or url_for('ai_design')).rstrip('?')
     if ref_work_id:
         w = Work.query.filter_by(id=ref_work_id, status='published').first()
         if w:  # 非 published 一律忽略
@@ -925,9 +1073,23 @@ def _ai_design_context(ref_work_id=None):
 @app.route('/ai-design', methods=['GET', 'POST'])
 def ai_design():
     if request.method == 'POST':
+        # 生成需要客戶登入（行銷展示頁 GET 仍開放）
+        cust_email = current_customer()
+        if not cust_email:
+            nxt = url_for('ai_design')
+            ref_id = request.form.get('ref_work_id', '').strip()
+            if ref_id:
+                nxt += '?ref=' + _u_parse.quote(ref_id)
+            flash('生成專屬模擬圖需要先登入（免費註冊）', 'error')
+            return redirect(url_for('account_login', next=nxt))
+        cust = find_app_user(cust_email)
+
         ctx = _ai_design_context()
-        # Rate limit: 3 AI generations per IP per day (86400 seconds)
-        if not _rl_check('ai_design', max_calls=3, window_seconds=86400):
+        # Rate limit: 每位登入客戶每日 3 次（key 帶 email；超長 email 改用雜湊避免超出欄位）
+        rl_key = f'ai_design:{cust_email}'
+        if len(rl_key) > 60:
+            rl_key = 'ai_design:' + hashlib.sha256(cust_email.encode('utf-8')).hexdigest()[:40]
+        if not _rl_check(rl_key, max_calls=3, window_seconds=86400):
             flash('今日 AI 設計生成次數已達上限（每日 3 次），歡迎來電洽詢 ' + CONTACT_PHONE, 'error')
             return render_template('public/ai_design.html', **ctx)
 
@@ -935,8 +1097,10 @@ def ai_design():
         # 防呆：互斥組合保留先選的、丟棄後選的（依表單順序），再套用 6 個上限
         chosen   = _filter_conflicting_elements(
             [e for e in request.form.getlist('elements') if e in AI_ELEMENT_TAGS])[:6]
-        name     = request.form.get('name', '').strip()
-        phone    = request.form.get('phone', '').strip()
+        name     = request.form.get('name', '').strip()[:120]
+        if not name and cust:
+            name = (cust.name or '').strip()[:120]  # 表單未填時帶 AppUser 姓名
+        phone    = request.form.get('phone', '').strip()[:20]
         photo    = request.files.get('photo')
 
         if style not in AI_STYLE_TAGS:
@@ -986,7 +1150,7 @@ def ai_design():
             id=design_id,
             owner_name=name,
             owner_phone=phone,
-            owner_email=current_user() or '',
+            owner_email=cust_email,
             style=style,
             # ref:<work_id> 以標籤形式記錄（不加新欄位）；結果頁顯示時過濾
             tags=','.join(chosen + ([f'ref:{ref_used_id}'] if ref_used_id else [])),
@@ -996,6 +1160,9 @@ def ai_design():
         )
         db.session.add(design)
         db.session.commit()
+        # 行為事件：AI 生成成功（tags 含風格 + 元素）
+        _log_event('ai_generate', work_id=ref_used_id,
+                   tags=','.join([style] + chosen), user_email=cust_email)
         return redirect(url_for('ai_design_result', design_id=design_id))
     return render_template('public/ai_design.html',
                            **_ai_design_context(request.args.get('ref', '').strip()))
@@ -1128,8 +1295,142 @@ def login():
 
 @app.route('/logout')
 def logout():
-    session.clear()
+    # 只清夥伴 session key，保留客戶（customer_*）與供應商登入狀態
+    session.pop('email', None)
+    session.pop('name', None)
     return redirect(url_for('index'))
+
+# ── 客戶帳號（/account，與夥伴帳號完全分離） ────────────────────
+@app.route('/account/register', methods=['GET', 'POST'])
+def account_register():
+    nxt = request.values.get('next', '')
+    ctx = dict(next=nxt, google_login_uri=_google_login_uri(nxt))
+    if request.method == 'POST':
+        name  = request.form.get('name', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        pw    = request.form.get('password', '').strip()
+        if not all([name, email, pw]):
+            flash('請填寫所有欄位', 'error')
+            return render_template('account/register.html', **ctx)
+        if len(pw) < 8:
+            flash('密碼至少 8 個字元', 'error')
+            return render_template('account/register.html', **ctx)
+        ok, err = _check_field_lengths(姓名=(name, 120), Email=(email, 120))
+        if not ok:
+            flash(err, 'error')
+            return render_template('account/register.html', **ctx)
+        if not _verify_recaptcha(request.form.get('g-recaptcha-response', '')):
+            flash('請完成「我不是機器人」驗證後再送出', 'error')
+            return render_template('account/register.html', **ctx)
+        if find_app_user(email):
+            flash('此 Email 已註冊，請直接登入', 'error')
+            return render_template('account/register.html', **ctx)
+        user = AppUser(
+            id=_new_id(),
+            email=email,
+            name=name,
+            password_hash=_hash(pw),
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(user)
+        db.session.commit()
+        session['customer_email'] = email
+        session['customer_name']  = name
+        flash(f'歡迎，{name}！帳號建立完成', 'success')
+        return _safe_redirect(nxt, url_for('ai_design'))
+    return render_template('account/register.html', **ctx)
+
+@app.route('/account/login', methods=['GET', 'POST'])
+def account_login():
+    nxt = request.values.get('next', '')
+    ctx = dict(next=nxt, google_login_uri=_google_login_uri(nxt))
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        pw    = request.form.get('password', '').strip()
+        u = find_app_user(email)
+        if u and u.password_hash:
+            ok, _needs_upgrade = _verify_password(pw, u.password_hash)
+            if ok:
+                session['customer_email'] = u.email
+                session['customer_name']  = u.name or ''
+                return _safe_redirect(nxt, url_for('ai_design'))
+        if u and not u.password_hash and u.google_sub:
+            flash('此帳號是以 Google 註冊的，請點下方「使用 Google 帳號繼續」', 'error')
+        else:
+            flash('Email 或密碼錯誤', 'error')
+    return render_template('account/login.html', **ctx)
+
+@app.route('/account/logout')
+def account_logout():
+    # 只清客戶 session key，不動夥伴 / 供應商登入狀態
+    session.pop('customer_email', None)
+    session.pop('customer_name', None)
+    return redirect(url_for('index'))
+
+@app.route('/account/google', methods=['POST'])
+@csrf.exempt
+def account_google():
+    """GIS 官方按鈕 callback：驗證 ID token 後建號 / 綁定 / 登入。
+
+    CSRF：GIS POST 不帶我們的 token，改驗證 GIS 內建的 g_csrf_token
+    double-submit cookie（cookie 與表單值必須一致）。
+    """
+    if not GOOGLE_OAUTH_CLIENT_ID:
+        abort(404)
+    nxt = request.args.get('next', '')
+    cookie_token = request.cookies.get('g_csrf_token', '')
+    body_token   = request.form.get('g_csrf_token', '')
+    if not cookie_token or cookie_token != body_token:
+        flash('Google 登入驗證失敗，請再試一次', 'error')
+        return redirect(url_for('account_login', next=nxt))
+    credential = request.form.get('credential', '').strip()
+    if not credential:
+        flash('Google 登入失敗：未收到憑證', 'error')
+        return redirect(url_for('account_login', next=nxt))
+    try:
+        info = _google_verify_id_token(credential)
+    except Exception:
+        flash('Google 登入驗證失敗，請稍後再試', 'error')
+        return redirect(url_for('account_login', next=nxt))
+    aud   = info.get('aud', '')
+    sub   = (info.get('sub') or '').strip()
+    email = (info.get('email') or '').strip().lower()
+    email_verified = str(info.get('email_verified', '')).lower() == 'true'
+    if aud != GOOGLE_OAUTH_CLIENT_ID or not sub or not email or not email_verified:
+        flash('Google 登入驗證失敗（憑證無效）', 'error')
+        return redirect(url_for('account_login', next=nxt))
+    gname = (info.get('name') or '').strip()
+
+    user = AppUser.query.filter_by(google_sub=sub).first()
+    if not user:
+        user = find_app_user(email)
+        if user:
+            # 既有密碼帳號：綁定 google_sub，之後兩種方式皆可登入
+            user.google_sub = sub
+            if not (user.name or '').strip() and gname:
+                user.name = gname
+        else:
+            user = AppUser(
+                id=_new_id(),
+                email=email,
+                name=gname,
+                password_hash=None,   # Google-only 帳號
+                google_sub=sub,
+                created_at=datetime.utcnow(),
+            )
+            db.session.add(user)
+        db.session.commit()
+    session['customer_email'] = user.email
+    session['customer_name']  = user.name or ''
+    flash(f'歡迎，{user.name or user.email}！', 'success')
+    return _safe_redirect(nxt, url_for('ai_design'))
+
+@app.route('/my-designs')
+@customer_required
+def my_designs():
+    designs = (AiDesign.query.filter_by(owner_email=current_customer())
+               .order_by(AiDesign.created_at.desc()).all())
+    return render_template('account/my_designs.html', designs=designs)
 
 # ── Member ────────────────────────────────────────────────────
 @app.route('/upload', methods=['GET', 'POST'])
@@ -1269,12 +1570,57 @@ def admin_dashboard():
     members  = Member.query.all()
     mats_pending = get_materials(status='pending')
     mats_active  = get_materials(status='active')
+
+    # ── AI 生成記錄（最近 50 筆）──────────────────────────────
+    ai_designs = AiDesign.query.order_by(AiDesign.created_at.desc()).limit(50).all()
+    emails = {d.owner_email for d in ai_designs if d.owner_email}
+    users_by_email = ({u.email: u for u in AppUser.query.filter(AppUser.email.in_(emails)).all()}
+                      if emails else {})
+    ref_ids = set()
+    for d in ai_designs:
+        for t in (d.tags or '').split(','):
+            if t.startswith('ref:') and t[4:]:
+                ref_ids.add(t[4:])
+    ref_names = ({w.id: w.name for w in Work.query.filter(Work.id.in_(ref_ids)).all()}
+                 if ref_ids else {})
+    ai_rows = []
+    for d in ai_designs:
+        rid = next((t[4:] for t in (d.tags or '').split(',') if t.startswith('ref:')), None)
+        u = users_by_email.get(d.owner_email)
+        ai_rows.append({
+            'd': d,
+            'account_name': (u.name or '') if u else '',
+            'tags': [t for t in (d.tags or '').split(',') if t and not t.startswith('ref:')],
+            'ref_id': rid,
+            'ref_name': ref_names.get(rid) if rid else None,
+        })
+
+    # ── 近 30 天 work_view Top 10 ─────────────────────────────
+    top_views = []
+    try:
+        since = datetime.utcnow() - timedelta(days=30)
+        rows = (db.session.query(UserEvent.work_id, func.count(UserEvent.id))
+                .filter(UserEvent.etype == 'work_view',
+                        UserEvent.created_at >= since,
+                        UserEvent.work_id.isnot(None))
+                .group_by(UserEvent.work_id)
+                .order_by(func.count(UserEvent.id).desc())
+                .limit(10).all())
+        wnames = ({w.id: w.name for w in Work.query.filter(
+                       Work.id.in_([r[0] for r in rows])).all()}
+                  if rows else {})
+        top_views = [{'work_id': wid, 'count': cnt, 'name': wnames.get(wid, wid)}
+                     for wid, cnt in rows]
+    except Exception:
+        db.session.rollback()  # 統計失敗不影響後台其他區塊
+
     return render_template('admin/dashboard.html',
                            pending=pending, published=published,
                            rejected=rejected, contacts=contacts,
                            members=members,
                            mats_pending=mats_pending,
-                           mats_active=mats_active)
+                           mats_active=mats_active,
+                           ai_rows=ai_rows, top_views=top_views)
 
 @app.route('/admin/work/<work_id>', methods=['GET', 'POST'])
 @login_required

@@ -54,6 +54,19 @@
     <div class="flash error">AI 影像服務目前尚未啟用，請稍後再試或直接<a href="{{ url_for('contact') }}">聯絡我們</a>。</div>
     {% endif %}
 
+    {% if not current_customer() %}
+    <div class="card" style="padding:20px 24px;margin-bottom:20px;border-left:4px solid var(--g500);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
+        <p style="font-weight:700;color:var(--g900)"><i class="bi bi-person-lock"></i> 生成專屬模擬圖需要先登入</p>
+        <p style="font-size:.88rem;color:var(--gray);margin-top:4px">免費註冊即可生成，模擬圖會保存在「我的模擬圖」，隨時回顧。</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <a href="{{ url_for('account_login', next=login_next) }}" class="btn btn-primary btn-sm">登入</a>
+        <a href="{{ url_for('account_register', next=login_next) }}" class="btn btn-outline btn-sm">免費註冊</a>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="ai-layout">
     <form method="post" enctype="multipart/form-data" id="aiForm" class="card" style="padding:28px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -103,7 +116,7 @@
       <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div>
           <label>稱呼（選填）</label>
-          <input class="form-control" type="text" name="name" placeholder="例：王先生">
+          <input class="form-control" type="text" name="name" placeholder="例：王先生" value="{{ customer_name or '' }}">
         </div>
         <div>
           <label>聯絡電話（選填）</label>
