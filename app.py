@@ -1086,6 +1086,20 @@ def _ai_design_rl_key(email):
         rl_key = 'ai_design:' + hashlib.sha256(email.encode('utf-8')).hexdigest()[:40]
     return rl_key
 
+
+# 生圖無上限白名單（逗號分隔 email，環境變數可覆寫；2026-06-13 森哥指定）
+AI_UNLIMITED_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get('AI_UNLIMITED_EMAILS', 'g2349311@gmail.com').split(',')
+    if e.strip()}
+
+
+def _ai_design_quota_ok(email):
+    """生成/修圖配額：白名單無上限，其餘每位客戶每日 3 次（共用池）。"""
+    if (email or '').strip().lower() in AI_UNLIMITED_EMAILS:
+        return True
+    return _rl_check(_ai_design_rl_key(email), max_calls=3, window_seconds=86400)
+
 def _fetch_design_result_photo(design):
     """抓 design 既有模擬圖 bytes（修圖用）；任何失敗或 >10MB 回 None。"""
     urls = photo_urls(design.result_photo_id, size='w1000')
@@ -1169,8 +1183,8 @@ def ai_design():
         cust = find_app_user(cust_email)
 
         ctx = _ai_design_context()
-        # Rate limit: 每位登入客戶每日 3 次（生成與修圖共用同一池）
-        if not _rl_check(_ai_design_rl_key(cust_email), max_calls=3, window_seconds=86400):
+        # Rate limit: 每位登入客戶每日 3 次（生成與修圖共用同一池；白名單無上限）
+        if not _ai_design_quota_ok(cust_email):
             flash('今日 AI 設計生成次數已達上限（每日 3 次），歡迎來電洽詢 ' + CONTACT_PHONE, 'error')
             return render_template('public/ai_design.html', **ctx)
 
@@ -1291,8 +1305,8 @@ def ai_design_refine(design_id):
         flash('請用 1–300 字描述想修改的地方', 'error')
         return redirect(result_url)
 
-    # 與生成共用每日 3 次配額（一次修改 = 一次配額）
-    if not _rl_check(_ai_design_rl_key(cust_email), max_calls=3, window_seconds=86400):
+    # 與生成共用每日 3 次配額（一次修改 = 一次配額；白名單無上限）
+    if not _ai_design_quota_ok(cust_email):
         flash('今日 AI 設計生成次數已達上限（每日 3 次），歡迎來電洽詢 ' + CONTACT_PHONE, 'error')
         return redirect(result_url)
 
