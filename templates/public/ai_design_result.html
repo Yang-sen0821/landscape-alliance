@@ -12,6 +12,11 @@
   #lightbox.open{display:flex}
   #lightbox img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:6px}
   .refine-box textarea{width:100%;min-height:90px;padding:12px;border:1px solid var(--border,#ddd);border-radius:10px;font:inherit;resize:vertical;box-sizing:border-box}
+  #refineLoading{display:none;position:fixed;inset:0;background:rgba(255,255,255,.92);z-index:9998;
+    flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px}
+  #refineLoading .spinner{width:52px;height:52px;border:5px solid var(--g100);border-top-color:var(--g700);
+    border-radius:50%;animation:rfspin 1s linear infinite}
+  @keyframes rfspin{to{transform:rotate(360deg)}}
 </style>
 {% endblock %}
 {% block content %}
@@ -50,7 +55,7 @@
     <div class="card refine-box" style="margin-top:28px;padding:24px">
       <div style="font-weight:700;font-size:1.05rem;color:var(--g900);margin-bottom:6px">✏️ 想調整哪裡？</div>
       <p style="color:var(--gray);font-size:.88rem;margin-bottom:12px">用文字描述想修改的地方，AI 會以這張模擬圖為基礎調整（每次修改使用 1 次當日生成額度）。</p>
-      <form method="post" action="{{ url_for('ai_design_refine', design_id=design.id) }}">
+      <form method="post" action="{{ url_for('ai_design_refine', design_id=design.id) }}" id="refineForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <textarea name="instruction" maxlength="300" required
                   placeholder="例：水池改小一點，右側加一棵桂花，整體色調再溫暖一些"></textarea>
@@ -75,6 +80,12 @@
       <p style="font-size:.78rem;color:var(--gray);margin-top:14px">模擬圖僅供風格參考，實際設計以現場評估為準。</p>
     </div>
   </div>
+</div>
+
+<div id="refineLoading">
+  <div class="spinner"></div>
+  <div style="font-weight:700;font-size:1.05rem;color:var(--g900)">AI 修改中…</div>
+  <div style="color:var(--gray);font-size:.9rem">約需 30–60 秒，請勿關閉視窗</div>
 </div>
 
 <div id="lightbox" role="dialog" aria-label="圖片放大檢視"><img src="" alt="放大檢視" referrerpolicy="no-referrer"></div>
@@ -102,6 +113,14 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && lb.classList.contains('open')) close();
   });
+  var rf = document.getElementById('refineForm');
+  if (rf) {
+    rf.addEventListener('submit', function () {
+      document.getElementById('refineLoading').style.display = 'flex';
+      var btn = rf.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
+    });
+  }
 })();
 </script>
 {% endblock %}

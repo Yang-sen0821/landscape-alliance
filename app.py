@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 import os, io, json, uuid, time, hashlib, base64
+import re
 import urllib.request as _u_req
 import urllib.parse as _u_parse
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import (Flask, render_template, request, redirect,
-                   url_for, session, flash, abort)
+                   url_for, session, flash, abort, make_response)
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
@@ -620,9 +621,44 @@ def get_all_tags():
                 tags.add(t)
     return sorted(tags)
 
+def _drive_thumb_url(file_id, size='w600'):
+    """Drive 縮圖直連網址（僅供伺服器端內部抓圖；瀏覽器顯示一律走 /img 代理）。"""
+    return f'https://drive.google.com/thumbnail?id={file_id}&sz={size}'
+
+
 def photo_urls(ids_str, size='w600'):
-    return [f'https://drive.google.com/thumbnail?id={fid.strip()}&sz={size}'
+    """回傳第一方代理網址：手機 webview（LINE 內建瀏覽器等）會擋 Google
+    Drive 圖片外連，改由本站 /img/<id> 轉發後全平台可顯示。"""
+    return [f'/img/{fid.strip()}?sz={size}'
             for fid in (ids_str or '').split(',') if fid.strip()]
+
+
+_IMG_ID_RE = re.compile(r'^[A-Za-z0-9_-]{10,90}$')
+_IMG_SZ_OK = {'w200', 'w400', 'w600', 'w1000', 'w1600'}
+
+
+@app.route('/img/<file_id>')
+def drive_image(file_id):
+    """Google Drive 圖片第一方代理（含瀏覽器快取一天）。"""
+    if not _IMG_ID_RE.match(file_id or ''):
+        abort(404)
+    sz = request.args.get('sz', 'w600')
+    if sz not in _IMG_SZ_OK:
+        sz = 'w600'
+    try:
+        req = _u_req.Request(_drive_thumb_url(file_id, sz),
+                             headers={'User-Agent': 'Mozilla/5.0'})
+        with _u_req.urlopen(req, timeout=30) as resp:
+            data = resp.read(_MAX_FILE_BYTES + 1)
+            ctype = resp.headers.get('Content-Type', 'image/jpeg')
+    except Exception:
+        abort(404)
+    if not data or len(data) > _MAX_FILE_BYTES:
+        abort(404)
+    r = make_response(data)
+    r.headers['Content-Type'] = ctype
+    r.headers['Cache-Control'] = 'public, max-age=86400'
+    return r
 
 def fmt_price(val):
     try:
@@ -1102,11 +1138,12 @@ def _ai_design_quota_ok(email):
 
 def _fetch_design_result_photo(design):
     """抓 design 既有模擬圖 bytes（修圖用）；任何失敗或 >10MB 回 None。"""
-    urls = photo_urls(design.result_photo_id, size='w1000')
-    if not urls:
+    fids = [f for f in (design.result_photo_id or '').split(',') if f.strip()]
+    if not fids:
         return None
     try:
-        req = _u_req.Request(urls[0], headers={'User-Agent': 'Mozilla/5.0'})
+        req = _u_req.Request(_drive_thumb_url(fids[0].strip(), 'w1000'),
+                             headers={'User-Agent': 'Mozilla/5.0'})
         with _u_req.urlopen(req, timeout=30) as resp:
             data = resp.read(_MAX_FILE_BYTES + 1)
         if not data or len(data) > _MAX_FILE_BYTES:
@@ -1117,11 +1154,12 @@ def _fetch_design_result_photo(design):
 
 def _fetch_work_ref_photo(work):
     """抓參照作品第一張照片 bytes；任何失敗或 >10MB 回 None（絕不讓生成失敗）。"""
-    urls = photo_urls(work.photo_ids, size='w1000')
-    if not urls:
+    fids = [f for f in (work.photo_ids or '').split(',') if f.strip()]
+    if not fids:
         return None
     try:
-        req = _u_req.Request(urls[0], headers={'User-Agent': 'Mozilla/5.0'})
+        req = _u_req.Request(_drive_thumb_url(fids[0].strip(), 'w1000'),
+                             headers={'User-Agent': 'Mozilla/5.0'})
         with _u_req.urlopen(req, timeout=30) as resp:
             data = resp.read(_MAX_FILE_BYTES + 1)
         if not data or len(data) > _MAX_FILE_BYTES:
@@ -1787,13 +1825,39 @@ def admin_dashboard():
     except Exception:
         db.session.rollback()  # 統計失敗不影響後台其他區塊
 
+    # ── 註冊客戶與使用數據 ────────────────────────────────────
+    customers = []
+    try:
+        gen_counts = dict(db.session.query(AiDesign.owner_email, func.count(AiDesign.id))
+                          .filter(AiDesign.owner_email != '')
+                          .group_by(AiDesign.owner_email).all())
+        view_counts = dict(db.session.query(UserEvent.user_email, func.count(UserEvent.id))
+                           .filter(UserEvent.etype == 'work_view',
+                                   UserEvent.user_email.isnot(None))
+                           .group_by(UserEvent.user_email).all())
+        last_seen = dict(db.session.query(UserEvent.user_email,
+                                          func.max(UserEvent.created_at))
+                         .filter(UserEvent.user_email.isnot(None))
+                         .group_by(UserEvent.user_email).all())
+        for u in AppUser.query.order_by(AppUser.created_at.desc()).all():
+            customers.append({
+                'u': u,
+                'via_google': bool(u.google_sub),
+                'gen_count': gen_counts.get(u.email, 0),
+                'view_count': view_counts.get(u.email, 0),
+                'last_seen': last_seen.get(u.email),
+            })
+    except Exception:
+        db.session.rollback()
+
     return render_template('admin/dashboard.html',
                            pending=pending, published=published,
                            rejected=rejected, contacts=contacts,
                            members=members,
                            mats_pending=mats_pending,
                            mats_active=mats_active,
-                           ai_rows=ai_rows, top_views=top_views)
+                           ai_rows=ai_rows, top_views=top_views,
+                           customers=customers)
 
 @app.route('/admin/work/<work_id>', methods=['GET', 'POST'])
 @login_required
