@@ -72,26 +72,125 @@ MASTER_TAGS = {
 }
 
 # ── AI 模擬設計標籤（業主端，固定集合） ────────────────────────
+# 來源：E:\AI-Wiki\Projects\景觀標籤提示詞庫.md（2026-06-13 森哥審核定案）
 AI_STYLE_TAGS = {
-    '日式禪風':  'Japanese zen garden style with raked gravel, moss, carefully pruned pines and stone lanterns',
-    '南洋度假':  'tropical resort style with palm trees, lush layered foliage and a warm vacation atmosphere',
-    '現代簡約':  'modern minimalist style with clean lines, geometric layout and restrained elegant planting',
-    '地中海風':  'Mediterranean style with terracotta tones, gravel, olive trees and warm sunlight',
-    '自然鄉村':  'natural cottage garden style with informal flower borders and soft curved paths',
-    '工業風':    'industrial chic style with concrete surfaces, corten steel planters and architectural grasses',
+    '日式禪風':    'Japanese zen garden style with raked gravel, moss, carefully pruned pines and stone lanterns',
+    '南洋度假':    'tropical resort style with palm trees, lush layered foliage and a warm vacation atmosphere',
+    '現代簡約':    'modern minimalist style with clean lines, geometric layout and restrained elegant planting',
+    '地中海風':    'Mediterranean style with terracotta tones, gravel, olive trees and warm sunlight',
+    '自然鄉村':    'natural cottage garden style with informal flower borders and soft curved paths',
+    '工業風':      'industrial chic style with concrete surfaces, corten steel planters and architectural grasses',
+    '雜木林風':    'naturalistic Japanese zoki woodland style with multi-stemmed deciduous trees, dappled shade, woodland underplanting of ferns and shade perennials',
+    '新中式庭園':  'contemporary Chinese garden style with framed views, dark-tile accents, sculptural black pines, white gravel and minimalist water basin',
+    '森林苔庭':    'shaded forest moss garden style with carpets of moss, ferns, stepping stones and a cool tranquil atmosphere',
+    '北歐極簡':    'Scandinavian minimal style with pale timber decking, soft ornamental grasses, muted greens and airy uncluttered openness',
+    '荒野草原風':  'naturalistic meadow style with flowing drifts of ornamental grasses and perennials, soft seed heads catching the light',
+    '侘寂風':      'wabi-sabi garden style with weathered natural stone, aged timber, raked gravel, muted earthy tones and the quiet beauty of imperfection',
+    '法式對稱庭園': 'formal French garden style with symmetrical clipped hedges, geometric parterres and an elegant central axis',
+    '旱生節水景觀': 'xeriscape style with drought-tolerant agaves, gravel mulch, sculptural cacti and water-wise design',
 }
 AI_ELEMENT_TAGS = {
-    '草坪':     'a healthy manicured lawn area',
-    '水景':     'a water feature such as a small pond or fountain',
-    '木平台':   'a wooden deck platform for outdoor seating',
-    '石材步道': 'a natural stone walkway',
-    '夜間照明': 'warm landscape accent lighting',
-    '涼亭棚架': 'a pergola or pavilion structure',
-    '花卉植栽': 'colorful flowering plants and shrubs',
-    '竹子':     'bamboo planting used as a green screen',
-    '戶外家具': 'tasteful outdoor furniture for relaxing',
-    '圍籬圍牆': 'an elegant fence or low garden wall',
+    # 植栽
+    '花卉植栽':     'colorful flowering plants and shrubs',
+    '竹子':         'bamboo planting used as a green screen',
+    '草坪':         'a healthy manicured lawn area',
+    '景觀喬木':     'a sculptural specimen tree as the focal point, beautifully pruned with layered branching',
+    '植生綠牆':     'a lush living green wall densely planted with varied foliage textures',
+    '觀賞草':       'soft ornamental grasses swaying gently, adding movement and texture',
+    '蕨類陰生植栽': 'shade-loving ferns and broadleaf foliage layered in a cool green understory',
+    '多肉旱生植栽': 'drought-tolerant succulents and agaves arranged in gravel mulch',
+    '香草可食花園': 'raised edible garden beds with herbs and leafy vegetables in neat rows',
+    '花箱盆栽組':   'curated container garden with large planter boxes in varied heights',
+    '攀藤棚架植栽': 'flowering climbing vines trained over a pergola creating a living canopy',
+    '原生蜜源花園': 'native pollinator-friendly planting alive with butterflies, layered wildflowers and grasses',
+    # 硬體構造
+    '木平台':       'a wooden deck platform for outdoor seating',
+    '石材步道':     'a natural stone walkway',
+    '涼亭棚架':     'a pergola or pavilion structure',
+    '圍籬圍牆':     'an elegant fence or low garden wall',
+    '戶外家具':     'tasteful outdoor furniture for relaxing',
+    '南方松木作':   'warm-toned treated timber screens and planters with visible wood grain',
+    '汀步石':       'irregular stepping stones set into lawn or gravel forming a casual path',
+    '抿石子鋪面':   'smooth exposed-aggregate paving in warm grey tones',
+    '鐵件構造':     'minimal black steel garden structures with clean thin profiles',
+    '遮陽帆':       'a taut shade sail stretched overhead casting soft shadows',
+    '卵石旱溪':     'a dry creek bed of smooth river pebbles winding through the planting',
+    # 水景與氛圍
+    '水景':         'a water feature such as a small pond or fountain',
+    '錦鯉魚池':     'a clear koi pond with colorful koi fish and natural rock edging',
+    '壁面瀑布水幕': 'a sleek wall-mounted waterfall feature with a thin sheet of falling water',
+    '生態池':       'a naturalistic ecological pond with aquatic plants and gravel margins',
+    '倒影靜水池':   'a still dark reflecting pool mirroring the sky and surrounding greenery',
+    '雨水花園':     'a rain garden of moisture-loving plants in a shallow planted basin with river stones',
+    '枯山水砂紋':   'raked white gravel patterns flowing around feature stones',
+    '霧森系統':     'fine cooling mist drifting through the foliage creating a mystical atmosphere',
+    '夜間照明':     'warm landscape accent lighting',
+    # 機能空間
+    '屋頂花園':     'a rooftop garden with windproof planting, deck flooring and skyline views',
+    '陽台綠化':     'a compact balcony garden with vertical planting and a small seating nook',
+    '中庭天井':     'a serene lightwell courtyard garden visible from indoors',
+    '玄關門面':     'an impressive entrance planting composition framing the doorway',
+    '戶外用餐區':   'an inviting outdoor dining area surrounded by layered greenery',
+    '兒童遊戲草地': 'a safe open play lawn with soft ground and low planting edges',
+    '人工草皮':     'premium artificial turf with realistic texture, perfectly even',
+    '火爐聚會區':   'an architectural fire pit with built-in bench seating, warm flames glowing',
+    '戶外廚房吧台': 'a sleek outdoor kitchen counter with built-in grill under a sheltering pergola',
+    '靜謐角落':     'a cozy intimate garden nook with a comfortable chair tucked among lush planting',
 }
+
+# 元素分組（僅供模板顯示，內容必須與 AI_ELEMENT_TAGS 一一對應）
+AI_ELEMENT_GROUPS = [
+    ('植栽', ['花卉植栽', '竹子', '草坪', '景觀喬木', '植生綠牆', '觀賞草',
+              '蕨類陰生植栽', '多肉旱生植栽', '香草可食花園', '花箱盆栽組',
+              '攀藤棚架植栽', '原生蜜源花園']),
+    ('硬體構造', ['木平台', '石材步道', '涼亭棚架', '圍籬圍牆', '戶外家具',
+                  '南方松木作', '汀步石', '抿石子鋪面', '鐵件構造', '遮陽帆',
+                  '卵石旱溪']),
+    ('水景與氛圍', ['水景', '錦鯉魚池', '壁面瀑布水幕', '生態池', '倒影靜水池',
+                    '雨水花園', '枯山水砂紋', '霧森系統', '夜間照明']),
+    ('機能空間', ['屋頂花園', '陽台綠化', '中庭天井', '玄關門面', '戶外用餐區',
+                  '兒童遊戲草地', '人工草皮', '火爐聚會區', '戶外廚房吧台',
+                  '靜謐角落']),
+]
+
+# 啟動時驗證：分組內容與 AI_ELEMENT_TAGS 完全一致（不多、不少、不重複）
+_group_keys = [k for _, _keys in AI_ELEMENT_GROUPS for k in _keys]
+assert len(_group_keys) == len(set(_group_keys)), 'AI_ELEMENT_GROUPS 有重複元素'
+assert set(_group_keys) == set(AI_ELEMENT_TAGS.keys()), \
+    f'AI_ELEMENT_GROUPS 與 AI_ELEMENT_TAGS 不一致：{set(_group_keys) ^ set(AI_ELEMENT_TAGS.keys())}'
+
+# 矛盾標籤設定（前端互斥隱藏 + 後端防呆共用）
+AI_ELEMENT_EXCLUSIVE_GROUPS = [
+    ['草坪', '人工草皮'],                              # 草地擇一
+    ['水景', '錦鯉魚池', '生態池', '倒影靜水池'],      # 水體擇一
+    ['屋頂花園', '陽台綠化', '中庭天井', '玄關門面'],  # 空間屬性擇一
+]
+AI_ELEMENT_CONFLICT_PAIRS = [
+    ['多肉旱生植栽', '蕨類陰生植栽'],
+    ['多肉旱生植栽', '雨水花園'],
+    ['多肉旱生植栽', '霧森系統'],
+]
+
+def _elements_conflict(a, b):
+    """兩個元素標籤是否互斥（同擇一群組或矛盾配對）。"""
+    for g in AI_ELEMENT_EXCLUSIVE_GROUPS:
+        if a in g and b in g:
+            return True
+    for p in AI_ELEMENT_CONFLICT_PAIRS:
+        if {a, b} == set(p):
+            return True
+    return False
+
+def _filter_conflicting_elements(chosen):
+    """依表單順序去除互斥元素：保留先選的、丟棄後選的（含重複）。"""
+    kept = []
+    for e in chosen:
+        if e in kept:
+            continue
+        if any(_elements_conflict(e, k) for k in kept):
+            continue
+        kept.append(e)
+    return kept
 
 TW_COUNTIES = [
     '台北市','新北市','基隆市','桃園市','新竹市','新竹縣','宜蘭縣',
@@ -523,6 +622,7 @@ def upload_photos(files, work_id):
 
 # ── AI 模擬設計（Gemini 影像生成） ──────────────────────────────
 GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image'
+GEMINI_DETECT_MODEL = 'gemini-2.5-flash'  # 作品標籤偵測（文字模型，非 image 模型）
 
 def _gemini_api_key():
     key = os.environ.get('GEMINI_API_KEY', '').strip()
@@ -579,6 +679,50 @@ def generate_design_image(photo_bytes, mime_type, style, elements):
                 return base64.b64decode(blob['data']), (blob.get('mimeType')
                                                         or blob.get('mime_type') or 'image/png')
     raise RuntimeError('AI 未回傳影像，請稍後再試')
+
+def detect_work_tags(photo_bytes, mime_type):
+    """以 Gemini 文字模型辨識作品照片，回傳詞彙表內的標籤清單（styles+elements 合併去重）。"""
+    key = _gemini_api_key()
+    if not key:
+        raise RuntimeError('AI 服務尚未啟用（未設定 GEMINI_API_KEY）')
+    styles_vocab   = list(AI_STYLE_TAGS.keys())
+    elements_vocab = list(AI_ELEMENT_TAGS.keys())
+    prompt = (
+        '你是景觀設計作品的標籤助手。請觀察這張景觀照片，從下方「詞彙表」中挑選適用的標籤。\n'
+        f'風格詞彙表（最多選 2 個）：{json.dumps(styles_vocab, ensure_ascii=False)}\n'
+        f'元素詞彙表（最多選 6 個，必須是圖中實際可見的元素）：{json.dumps(elements_vocab, ensure_ascii=False)}\n'
+        '規則：只能從詞彙表中選，標籤文字必須與詞彙表完全一致，不得自創；不確定的不要選。\n'
+        '回傳 JSON 格式：{"styles": ["..."], "elements": ["..."]}'
+    )
+    body = json.dumps({
+        'contents': [{'parts': [
+            {'text': prompt},
+            {'inline_data': {'mime_type': mime_type,
+                             'data': base64.b64encode(photo_bytes).decode('ascii')}},
+        ]}],
+        'generationConfig': {'responseMimeType': 'application/json'},
+    }).encode('utf-8')
+    url = (f'https://generativelanguage.googleapis.com/v1beta/models/'
+           f'{GEMINI_DETECT_MODEL}:generateContent?key={key}')
+    req = _u_req.Request(url, data=body, headers={'Content-Type': 'application/json'})
+    with _u_req.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+    text = ''
+    for cand in data.get('candidates', []):
+        for part in cand.get('content', {}).get('parts', []):
+            if part.get('text'):
+                text += part['text']
+    result = json.loads(text)
+    if not isinstance(result, dict):
+        raise RuntimeError('AI 回傳格式錯誤')
+    # 過濾：只留詞彙表內的值，套用數量上限
+    styles   = [s for s in result.get('styles', []) if s in AI_STYLE_TAGS][:2]
+    elements = [e for e in result.get('elements', []) if e in AI_ELEMENT_TAGS][:6]
+    tags = []
+    for t in styles + elements:
+        if t not in tags:
+            tags.append(t)
+    return tags
 
 def upload_design_to_drive(design_id, src_bytes, src_mime, src_ext, gen_bytes, gen_mime):
     """原始照 + 模擬圖一起上傳 Drive，回傳 (src_id, gen_id)；失敗時清除孤兒檔案。"""
@@ -710,6 +854,9 @@ def rate_work(work_id):
 def ai_design():
     ctx = dict(styles=list(AI_STYLE_TAGS.keys()),
                elements=list(AI_ELEMENT_TAGS.keys()),
+               element_groups=AI_ELEMENT_GROUPS,
+               element_conflicts={'groups': AI_ELEMENT_EXCLUSIVE_GROUPS,
+                                  'pairs': AI_ELEMENT_CONFLICT_PAIRS},
                ai_ready=bool(_gemini_api_key()))
     if request.method == 'POST':
         # Rate limit: 3 AI generations per IP per day (86400 seconds)
@@ -718,7 +865,9 @@ def ai_design():
             return render_template('public/ai_design.html', **ctx)
 
         style    = request.form.get('style', '').strip()
-        chosen   = [e for e in request.form.getlist('elements') if e in AI_ELEMENT_TAGS][:6]
+        # 防呆：互斥組合保留先選的、丟棄後選的（依表單順序），再套用 6 個上限
+        chosen   = _filter_conflicting_elements(
+            [e for e in request.form.getlist('elements') if e in AI_ELEMENT_TAGS])[:6]
         name     = request.form.get('name', '').strip()
         phone    = request.form.get('phone', '').strip()
         photo    = request.files.get('photo')
@@ -946,6 +1095,29 @@ def upload():
         flash('上傳成功！審核通過後即公開展示', 'success')
         return redirect(url_for('my_works'))
     return render_template('member/upload.html')
+
+@app.route('/api/detect-tags', methods=['POST'])
+@login_required
+def api_detect_tags():
+    """作品照片 AI 偵測標籤（會員限定）。任何 Gemini 錯誤回 200 + 空標籤，不回 500。"""
+    # 限流：同 IP 每日 30 次
+    if not _rl_check('detect_tags', max_calls=30, window_seconds=86400):
+        return {'tags': [], 'error': '今日 AI 偵測次數已達上限（每日 30 次）'}
+    photo = request.files.get('photo')
+    if not photo or not photo.filename:
+        return {'tags': [], 'error': '請先選擇一張照片'}, 400
+    ext = os.path.splitext(photo.filename)[1].lstrip('.').lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        return {'tags': [], 'error': f'不支援的檔案格式「.{ext}」，僅接受：{", ".join(sorted(_ALLOWED_EXTENSIONS))}'}, 400
+    data = photo.stream.read()
+    if len(data) > _MAX_FILE_BYTES:
+        return {'tags': [], 'error': '照片超過 10 MB 上限'}, 400
+    mime = photo.content_type or f'image/{"jpeg" if ext == "jpg" else ext}'
+    try:
+        tags = detect_work_tags(data, mime)
+    except Exception:
+        return {'tags': [], 'error': '偵測服務暫時無法使用'}
+    return {'tags': tags}
 
 @app.route('/my-profile', methods=['GET', 'POST'])
 @login_required

@@ -40,6 +40,14 @@
           <input type="file" id="photo-input" name="photos" multiple accept="image/*"
                  style="display:none" onchange="previewPhotos(this)">
           <div class="preview-grid" id="preview-grid"></div>
+          <button type="button" class="btn btn-outline" id="detect-btn" disabled
+                  onclick="detectTags()" style="margin-top:10px">
+            🔍 AI 偵測標籤
+          </button>
+          <p style="font-size:.78rem;color:var(--gray);margin-top:4px">
+            選擇照片後可用 AI 自動偵測適合的標籤（取第一張照片分析），結果可自行刪改
+          </p>
+          <div class="sel-hint" id="detect-hint" style="display:none"></div>
         </div>
 
         <div class="form-group">
@@ -119,6 +127,76 @@ function previewPhotos(input) {
     img.className = 'preview-img';
     img.src = URL.createObjectURL(f);
     grid.appendChild(img);
+  });
+  // 選了照片才可按 AI 偵測標籤
+  document.getElementById('detect-btn').disabled = input.files.length === 0;
+}
+
+// ── AI 偵測標籤（輔助不是強制，結果可自行刪改） ──────────────
+async function detectTags() {
+  const input = document.getElementById('photo-input');
+  if (!input.files.length) return;
+  const btn  = document.getElementById('detect-btn');
+  const hint = document.getElementById('detect-hint');
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '偵測中…';
+  hint.style.display = 'none';
+  try {
+    const fd = new FormData();
+    fd.append('photo', input.files[0]);  // 取第一張照片
+    fd.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
+    const resp = await fetch('{{ url_for("api_detect_tags") }}', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.error) {
+      hint.textContent = data.error;
+      hint.style.display = 'block';
+    }
+    if (data.tags && data.tags.length) {
+      addDetectedTags(data.tags);
+      hint.textContent = `AI 建議了 ${data.tags.length} 個標籤，已附加（點標籤可移除）`;
+      hint.style.display = 'block';
+    } else if (!data.error) {
+      hint.textContent = 'AI 沒有偵測到適合的標籤，請手動選擇';
+      hint.style.display = 'block';
+    }
+  } catch (e) {
+    hint.textContent = '偵測服務暫時無法使用';
+    hint.style.display = 'block';
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = input.files.length === 0;
+  }
+}
+
+// 把偵測到的標籤附加到既有「標籤」欄位（去重）：
+// 既有分類裡有同名標籤 → 直接點亮；沒有 → 動態加進「AI 偵測」群組，可點擊移除
+function addDetectedTags(tags) {
+  tags.forEach(tag => {
+    if (selectedTags.has(tag)) return;  // 與已有內容去重
+    let pill = document.querySelector(`.tag-pill[data-tag="${CSS.escape(tag)}"]`);
+    if (!pill) {
+      let grid = document.getElementById('ai-tag-grid');
+      if (!grid) {
+        const anchor = document.getElementById('sel-hint');
+        const title = document.createElement('div');
+        title.className = 'cat-title';
+        title.textContent = 'AI 偵測';
+        grid = document.createElement('div');
+        grid.className = 'tag-grid';
+        grid.id = 'ai-tag-grid';
+        anchor.parentNode.insertBefore(title, anchor);
+        anchor.parentNode.insertBefore(grid, anchor);
+      }
+      pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'tag-pill';
+      pill.dataset.tag = tag;
+      pill.textContent = tag;
+      pill.onclick = function () { toggleTag(this); };
+      grid.appendChild(pill);
+    }
+    if (!pill.classList.contains('selected')) toggleTag(pill);
   });
 }
 

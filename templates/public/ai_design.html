@@ -9,6 +9,9 @@
              background:#fff;font-size:.9rem;font-weight:600;color:var(--gray);cursor:pointer;transition:.15s}
   .chip input:checked + span{background:var(--g700);border-color:var(--g700);color:#fff}
   .chip span:hover{border-color:var(--g500)}
+  .elem-group-title{font-size:.78rem;font-weight:700;color:var(--gray);letter-spacing:.06em;
+                    margin:14px 0 8px}
+  .elem-group-title:first-of-type{margin-top:4px}
   .drop{border:2px dashed var(--g300);border-radius:var(--radius);padding:28px;text-align:center;
         background:#fff;cursor:pointer;transition:.15s}
   .drop:hover{border-color:var(--g500);background:var(--g50)}
@@ -54,11 +57,14 @@
 
       <div class="form-group">
         <label>3. 想加入的元素（可複選，最多 6 項）</label>
+        {% for group_name, group_items in element_groups %}
+        <div class="elem-group-title">{{ group_name }}</div>
         <div class="chip-group">
-          {% for e in elements %}
+          {% for e in group_items %}
           <label class="chip"><input type="checkbox" name="elements" value="{{ e }}"><span>{{ e }}</span></label>
           {% endfor %}
         </div>
+        {% endfor %}
       </div>
 
       <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -101,5 +107,34 @@
   document.getElementById('aiForm').addEventListener('submit', () => {
     document.getElementById('loading').style.display = 'flex';
   });
+
+  // ── 矛盾標籤互斥隱藏 ──────────────────────────────────────
+  // groups：同群組只能擇一；pairs：兩兩矛盾
+  const ELEMENT_CONFLICTS = {{ element_conflicts | tojson }};
+
+  function isConflict(a, b) {
+    for (const g of ELEMENT_CONFLICTS.groups) {
+      if (g.includes(a) && g.includes(b)) return true;
+    }
+    for (const p of ELEMENT_CONFLICTS.pairs) {
+      if ((p[0] === a && p[1] === b) || (p[0] === b && p[1] === a)) return true;
+    }
+    return false;
+  }
+
+  const elementBoxes = Array.from(document.querySelectorAll('input[name="elements"]'));
+
+  // 每次 change 重算全部：先全部顯示，再依「已勾選項」隱藏與其衝突的選項。
+  // 某元素只有在沒有任何已勾選元素與它衝突時才會恢復顯示。
+  function refreshConflictVisibility() {
+    const checked = elementBoxes.filter(b => b.checked).map(b => b.value);
+    elementBoxes.forEach(b => {
+      const hide = !b.checked && checked.some(c => c !== b.value && isConflict(c, b.value));
+      b.closest('label').style.display = hide ? 'none' : '';
+    });
+  }
+
+  elementBoxes.forEach(b => b.addEventListener('change', refreshConflictVisibility));
+  refreshConflictVisibility();
 </script>
 {% endblock %}
