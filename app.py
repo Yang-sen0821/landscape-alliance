@@ -827,6 +827,43 @@ def generate_design_image(photo_bytes, mime_type, style, elements,
                                                         or blob.get('mime_type') or 'image/png')
     raise RuntimeError('AI 未回傳影像，請稍後再試')
 
+def refine_design_image(prev_bytes, prev_mime, instruction):
+    """以 Gemini 影像模型依客戶文字指示微調既有模擬圖，回傳 (bytes, mime)。
+
+    僅依客戶指示修改，其餘構圖／視角／既有元素保持不變；_NO_TEXT_RULE 照常附加。
+    """
+    key = _gemini_api_key()
+    if not key:
+        raise RuntimeError('AI 影像服務尚未啟用（未設定 GEMINI_API_KEY）')
+    prompt = (
+        'The image provided is an existing photorealistic landscape design simulation. '
+        'Modify it ONLY according to the client instruction below. Keep the camera angle, '
+        'perspective, composition, lighting, buildings and every element NOT mentioned in '
+        'the instruction completely unchanged. '
+        'Client instruction (written in Traditional Chinese, quoted verbatim): '
+        f'"{instruction}" '
+        + _NO_TEXT_RULE)
+    body = json.dumps({
+        'contents': [{'parts': [
+            {'text': prompt},
+            {'inline_data': {'mime_type': prev_mime or 'image/jpeg',
+                             'data': base64.b64encode(prev_bytes).decode('ascii')}},
+        ]}],
+        'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']},
+    }).encode('utf-8')
+    url = (f'https://generativelanguage.googleapis.com/v1beta/models/'
+           f'{GEMINI_IMAGE_MODEL}:generateContent?key={key}')
+    req = _u_req.Request(url, data=body, headers={'Content-Type': 'application/json'})
+    with _u_req.urlopen(req, timeout=150) as resp:
+        data = json.loads(resp.read())
+    for cand in data.get('candidates', []):
+        for part in cand.get('content', {}).get('parts', []):
+            blob = part.get('inlineData') or part.get('inline_data') or {}
+            if blob.get('data'):
+                return base64.b64decode(blob['data']), (blob.get('mimeType')
+                                                        or blob.get('mime_type') or 'image/png')
+    raise RuntimeError('AI 未回傳影像，請稍後再試')
+
 def detect_work_tags(photo_bytes, mime_type):
     """以 Gemini 文字模型辨識作品照片，回傳詞彙表內的標籤清單（styles+elements 合併去重）。"""
     key = _gemini_api_key()
@@ -903,6 +940,31 @@ def upload_design_to_drive(design_id, src_bytes, src_mime, src_ext, gen_bytes, g
             pass
         raise
     return ids[0], ids[1]
+
+def upload_refined_to_drive(design_id, gen_bytes, gen_mime):
+    """修圖專用：只上傳一張新生成圖到 Drive（原始照沿用 parent，不重傳），回傳 gen_id。"""
+    svc = _drive()
+    folder = svc.files().create(body={
+        'name': f'aidsgn_{design_id}',
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [DRIVE_FOLDER_ID],
+    }, fields='id').execute()
+    wfid = folder['id']
+    gen_ext = 'png' if 'png' in (gen_mime or '') else 'jpg'
+    try:
+        media = MediaIoBaseUpload(io.BytesIO(gen_bytes), mimetype=gen_mime or 'image/jpeg',
+                                  resumable=False)
+        cf = svc.files().create(body={'name': f'{design_id}_design.{gen_ext}', 'parents': [wfid]},
+                                media_body=media, fields='id').execute()
+        fid = cf['id']
+        svc.permissions().create(fileId=fid, body={'type': 'anyone', 'role': 'reader'}).execute()
+    except Exception:
+        try:
+            svc.files().delete(fileId=wfid).execute()  # 刪資料夾連同其中檔案
+        except Exception:
+            pass
+        raise
+    return fid
 
 # ── Public routes ─────────────────────────────────────────────
 @app.route('/')
@@ -1017,6 +1079,28 @@ def _similar_works(work, limit=4):
 
 # ── AI 模擬設計（業主端，登入制） ──────────────────────────────
 
+def _ai_design_rl_key(email):
+    """生成與修圖共用的限流 key（超長 email 改用雜湊避免超出欄位）。"""
+    rl_key = f'ai_design:{email}'
+    if len(rl_key) > 60:
+        rl_key = 'ai_design:' + hashlib.sha256(email.encode('utf-8')).hexdigest()[:40]
+    return rl_key
+
+def _fetch_design_result_photo(design):
+    """抓 design 既有模擬圖 bytes（修圖用）；任何失敗或 >10MB 回 None。"""
+    urls = photo_urls(design.result_photo_id, size='w1000')
+    if not urls:
+        return None
+    try:
+        req = _u_req.Request(urls[0], headers={'User-Agent': 'Mozilla/5.0'})
+        with _u_req.urlopen(req, timeout=30) as resp:
+            data = resp.read(_MAX_FILE_BYTES + 1)
+        if not data or len(data) > _MAX_FILE_BYTES:
+            return None
+        return data
+    except Exception:
+        return None
+
 def _fetch_work_ref_photo(work):
     """抓參照作品第一張照片 bytes；任何失敗或 >10MB 回 None（絕不讓生成失敗）。"""
     urls = photo_urls(work.photo_ids, size='w1000')
@@ -1085,11 +1169,8 @@ def ai_design():
         cust = find_app_user(cust_email)
 
         ctx = _ai_design_context()
-        # Rate limit: 每位登入客戶每日 3 次（key 帶 email；超長 email 改用雜湊避免超出欄位）
-        rl_key = f'ai_design:{cust_email}'
-        if len(rl_key) > 60:
-            rl_key = 'ai_design:' + hashlib.sha256(cust_email.encode('utf-8')).hexdigest()[:40]
-        if not _rl_check(rl_key, max_calls=3, window_seconds=86400):
+        # Rate limit: 每位登入客戶每日 3 次（生成與修圖共用同一池）
+        if not _rl_check(_ai_design_rl_key(cust_email), max_calls=3, window_seconds=86400):
             flash('今日 AI 設計生成次數已達上限（每日 3 次），歡迎來電洽詢 ' + CONTACT_PHONE, 'error')
             return render_template('public/ai_design.html', **ctx)
 
@@ -1174,11 +1255,84 @@ def ai_design_result(design_id):
         abort(404)
     src_url = photo_urls(design.source_photo_id, size='w1000')[0]
     gen_url = photo_urls(design.result_photo_id, size='w1000')[0]
-    # ref:<work_id> 是內部記錄用標籤，不對外顯示
-    tags = [t for t in (design.tags or '').split(',') if t and not t.startswith('ref:')]
+    # ref:<work_id>／refine:<design_id> 是內部記錄用標籤，不對外顯示
+    tags = [t for t in (design.tags or '').split(',')
+            if t and not t.startswith('ref:') and not t.startswith('refine:')]
+    # 參照作品而生成的，把參照作品照一併呈現（作品已刪除或無照片則略過）
+    ref_work = None
+    ref_id = next((t[4:] for t in (design.tags or '').split(',')
+                   if t.startswith('ref:')), None)
+    if ref_id:
+        w = Work.query.filter_by(id=ref_id).first()
+        if w and (w.photo_ids or '').strip():
+            ref_work = {'id': w.id, 'name': w.name,
+                        'photo': photo_urls(w.photo_ids, size='w1000')[0]}
+    # 只有 design 擁有者（登入客戶）能用文字迭代修圖；舊記錄 owner_email 為空者不開放
+    is_owner = bool(design.owner_email) and current_customer() == design.owner_email
     return render_template('public/ai_design_result.html', design=design,
                            src_url=src_url, gen_url=gen_url, tags=tags,
+                           ref_work=ref_work, is_owner=is_owner,
                            contact_phone=CONTACT_PHONE)
+
+@app.route('/ai-design/<design_id>/refine', methods=['POST'])
+@customer_required
+def ai_design_refine(design_id):
+    """文字迭代修圖：以既有模擬圖為底，依客戶文字指示生成新的一張（owner 限定）。"""
+    design = AiDesign.query.filter_by(id=design_id).first()
+    if not design:
+        abort(404)
+    cust_email = current_customer()
+    if not design.owner_email or design.owner_email != cust_email:
+        abort(403)
+    result_url = url_for('ai_design_result', design_id=design_id)
+
+    instruction = (request.form.get('instruction') or '').strip()
+    if not instruction or len(instruction) > 300:
+        flash('請用 1–300 字描述想修改的地方', 'error')
+        return redirect(result_url)
+
+    # 與生成共用每日 3 次配額（一次修改 = 一次配額）
+    if not _rl_check(_ai_design_rl_key(cust_email), max_calls=3, window_seconds=86400):
+        flash('今日 AI 設計生成次數已達上限（每日 3 次），歡迎來電洽詢 ' + CONTACT_PHONE, 'error')
+        return redirect(result_url)
+
+    prev_bytes = _fetch_design_result_photo(design)
+    if not prev_bytes:
+        flash('暫時無法讀取這張模擬圖，請稍後再試', 'error')
+        return redirect(result_url)
+
+    try:
+        gen_bytes, gen_mime = refine_design_image(prev_bytes, 'image/jpeg', instruction)
+    except Exception as e:
+        flash(f'AI 修改失敗：{e}', 'error')
+        return redirect(result_url)
+
+    new_id = str(uuid.uuid4()).replace('-', '')[:12]
+    try:
+        gen_id = upload_refined_to_drive(new_id, gen_bytes, gen_mime)
+    except Exception as e:
+        flash(f'圖片儲存失敗：{e}', 'error')
+        return redirect(result_url)
+
+    # tags 承襲 parent（過濾掉舊 refine:），再記錄 refine:<parent_id>（顯示時過濾）
+    base_tags = [t for t in (design.tags or '').split(',')
+                 if t and not t.startswith('refine:')]
+    new_design = AiDesign(
+        id=new_id,
+        owner_name=design.owner_name,
+        owner_phone=design.owner_phone,
+        owner_email=design.owner_email,
+        style=design.style,
+        tags=','.join(base_tags + [f'refine:{design.id}']),
+        source_photo_id=design.source_photo_id,  # 原始照沿用 parent，不重傳
+        result_photo_id=gen_id,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(new_design)
+    db.session.commit()
+    _log_event('ai_refine', tags=design.style or '', user_email=cust_email)
+    flash('已依您的描述產生新的模擬圖', 'success')
+    return redirect(url_for('ai_design_result', design_id=new_id))
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -1585,14 +1739,19 @@ def admin_dashboard():
                  if ref_ids else {})
     ai_rows = []
     for d in ai_designs:
-        rid = next((t[4:] for t in (d.tags or '').split(',') if t.startswith('ref:')), None)
+        d_tags = (d.tags or '').split(',')
+        rid = next((t[4:] for t in d_tags if t.startswith('ref:')), None)
+        # refine:<design_id>：此圖由哪張模擬圖修改而來（顯示為「修改自 #id」）
+        refine_id = next((t[7:] for t in d_tags if t.startswith('refine:') and t[7:]), None)
         u = users_by_email.get(d.owner_email)
         ai_rows.append({
             'd': d,
             'account_name': (u.name or '') if u else '',
-            'tags': [t for t in (d.tags or '').split(',') if t and not t.startswith('ref:')],
+            'tags': [t for t in d_tags
+                     if t and not t.startswith('ref:') and not t.startswith('refine:')],
             'ref_id': rid,
             'ref_name': ref_names.get(rid) if rid else None,
+            'refine_id': refine_id,
         })
 
     # ── 近 30 天 work_view Top 10 ─────────────────────────────

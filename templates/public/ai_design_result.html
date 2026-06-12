@@ -3,9 +3,15 @@
 {% block head %}
 <style>
   .cmp-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-  @media(max-width:720px){.cmp-grid{grid-template-columns:1fr}}
-  .cmp-card img{width:100%;display:block;border-radius:10px;background:var(--g100);min-height:200px;object-fit:cover}
+  .cmp-grid.three{grid-template-columns:1fr 1fr 1fr}
+  @media(max-width:720px){.cmp-grid,.cmp-grid.three{grid-template-columns:1fr}}
+  .cmp-card img{width:100%;display:block;border-radius:10px;background:var(--g100);min-height:200px;object-fit:cover;cursor:zoom-in}
   .cmp-label{font-weight:700;color:var(--g900);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .cmp-hint{font-size:.75rem;color:var(--gray);margin-top:8px;text-align:center}
+  #lightbox{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);cursor:zoom-out;align-items:center;justify-content:center;padding:16px}
+  #lightbox.open{display:flex}
+  #lightbox img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;border-radius:6px}
+  .refine-box textarea{width:100%;min-height:90px;padding:12px;border:1px solid var(--border,#ddd);border-radius:10px;font:inherit;resize:vertical;box-sizing:border-box}
 </style>
 {% endblock %}
 {% block content %}
@@ -17,24 +23,85 @@
       {% for t in tags %}<span class="tag" style="margin-left:6px">{{ t }}</span>{% endfor %}
     </p>
 
-    <div class="cmp-grid">
+    <div class="cmp-grid{% if ref_work %} three{% endif %}">
       <div class="card cmp-card" style="padding:16px">
         <div class="cmp-label"><i class="bi bi-camera"></i> 原始現場照</div>
-        <img src="{{ src_url }}" alt="原始現場照片" referrerpolicy="no-referrer">
+        <img src="{{ src_url }}" alt="原始現場照片" referrerpolicy="no-referrer" class="zoomable">
+        <div class="cmp-hint"><i class="bi bi-zoom-in"></i> 點圖可放大</div>
       </div>
+      {% if ref_work %}
+      <div class="card cmp-card" style="padding:16px">
+        <div class="cmp-label"><i class="bi bi-bookmark-star"></i> 參照作品</div>
+        <img src="{{ ref_work.photo }}" alt="參照作品：{{ ref_work.name }}" referrerpolicy="no-referrer" class="zoomable">
+        <div class="cmp-hint">
+          <i class="bi bi-zoom-in"></i> 點圖可放大 ·
+          <a href="{{ url_for('work_detail', work_id=ref_work.id) }}" style="color:inherit">{{ ref_work.name }}</a>
+        </div>
+      </div>
+      {% endif %}
       <div class="card cmp-card" style="padding:16px">
         <div class="cmp-label" style="color:var(--g700)"><i class="bi bi-magic"></i> AI 景觀模擬圖</div>
-        <img src="{{ gen_url }}" alt="AI 模擬設計圖" referrerpolicy="no-referrer">
+        <img src="{{ gen_url }}" alt="AI 模擬設計圖" referrerpolicy="no-referrer" class="zoomable">
+        <div class="cmp-hint"><i class="bi bi-zoom-in"></i> 點圖可放大</div>
       </div>
     </div>
+
+    {% if is_owner %}
+    <div class="card refine-box" style="margin-top:28px;padding:24px">
+      <div style="font-weight:700;font-size:1.05rem;color:var(--g900);margin-bottom:6px">✏️ 想調整哪裡？</div>
+      <p style="color:var(--gray);font-size:.88rem;margin-bottom:12px">用文字描述想修改的地方，AI 會以這張模擬圖為基礎調整（每次修改使用 1 次當日生成額度）。</p>
+      <form method="post" action="{{ url_for('ai_design_refine', design_id=design.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <textarea name="instruction" maxlength="300" required
+                  placeholder="例：水池改小一點，右側加一棵桂花，整體色調再溫暖一些"></textarea>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <button type="submit" class="btn btn-primary"><i class="bi bi-magic"></i> 依描述修改這張圖</button>
+          <a href="{{ url_for('ai_design') }}" style="font-size:.85rem;color:var(--gray)">↺ 用新照片重新開始</a>
+        </div>
+      </form>
+    </div>
+    {% elif design.owner_email %}
+    <div class="card" style="margin-top:28px;padding:24px;text-align:center">
+      <p style="color:var(--gray);margin-bottom:12px">登入後可繼續調整自己的模擬圖</p>
+      <a class="btn btn-outline" href="{{ url_for('account_login', next=request.path) }}"><i class="bi bi-box-arrow-in-right"></i> 客戶登入</a>
+    </div>
+    {% endif %}
 
     <div class="card" style="margin-top:28px;padding:28px;text-align:center">
       <div style="font-weight:700;font-size:1.1rem;color:var(--g900);margin-bottom:6px">喜歡這個設計方向嗎？</div>
       <p style="color:var(--gray);margin-bottom:18px">聯盟設計師可依此風格為您做現場評估與正式設計報價。</p>
       <a class="btn btn-primary" href="{{ url_for('contact') }}"><i class="bi bi-chat-dots"></i> 免費諮詢</a>
-      <a class="btn btn-outline" href="{{ url_for('ai_design') }}" style="margin-left:10px"><i class="bi bi-arrow-repeat"></i> 再做一張</a>
+      <p style="margin-top:14px"><a href="{{ url_for('ai_design') }}" style="font-size:.85rem;color:var(--gray)">↺ 用新照片重新開始</a></p>
       <p style="font-size:.78rem;color:var(--gray);margin-top:14px">模擬圖僅供風格參考，實際設計以現場評估為準。</p>
     </div>
   </div>
 </div>
+
+<div id="lightbox" role="dialog" aria-label="圖片放大檢視"><img src="" alt="放大檢視" referrerpolicy="no-referrer"></div>
+<script>
+(function () {
+  var lb = document.getElementById('lightbox');
+  var lbImg = lb.querySelector('img');
+  function open(src) {
+    lbImg.src = src;
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function close() {
+    lb.classList.remove('open');
+    lbImg.removeAttribute('src');
+    document.body.style.overflow = '';
+  }
+  var imgs = document.querySelectorAll('.cmp-card img.zoomable');
+  for (var i = 0; i < imgs.length; i++) {
+    (function (img) {
+      img.addEventListener('click', function () { open(img.src); });
+    })(imgs[i]);
+  }
+  lb.addEventListener('click', close);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && lb.classList.contains('open')) close();
+  });
+})();
+</script>
 {% endblock %}

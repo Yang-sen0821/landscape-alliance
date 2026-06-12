@@ -32,7 +32,7 @@
             <span style="font-size:.78rem;color:var(--gray)">{{ d.created_at.strftime('%Y-%m-%d') if d.created_at }}</span>
           </div>
           <div class="design-tags">
-            {% for t in (d.tags or '').split(',') %}{% if t.strip() and not t.strip().startswith('ref:') %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
+            {% for t in (d.tags or '').split(',') %}{% if t.strip() and not t.strip().startswith('ref:') and not t.strip().startswith('refine:') %}<span class="tag" style="font-size:.72rem">{{ t.strip() }}</span>{% endif %}{% endfor %}
           </div>
         </div>
       </a>
