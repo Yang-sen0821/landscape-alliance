@@ -60,6 +60,11 @@ db = SQLAlchemy(app)
 
 csrf = CSRFProtect(app)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+# 畫筆遮罩（mask_overlay）以 base64 hidden 欄位隨表單上傳：
+# Werkzeug >=3.1 對多部分表單「非檔案欄位」預設只允許 500KB，會在進到路由前就回 413。
+# 放寬到 12MB（遮罩規格上限 8MB + 餘裕）；同時設 config（Flask >=3.1）與 class 屬性（Flask 3.0 相容）。
+app.config['MAX_FORM_MEMORY_SIZE'] = 12 * 1024 * 1024
+app.request_class.max_form_memory_size = 12 * 1024 * 1024
 
 ADMIN_EMAIL     = os.environ.get('ADMIN_EMAIL', 'g2349311@gmail.com')
 DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID', '1qCzsnVGQl6RAQprtWuh4aCMt98J59BkD')
@@ -801,7 +806,7 @@ _NO_TEXT_RULE = ('STRICT RULE: the generated image must contain absolutely NO te
                  'no words, no letters, no numbers, no watermarks, no logos, no labels, '
                  'no captions, no annotations, no signatures. Pure photographic imagery only.')
 
-def _build_design_prompt(style, elements, has_ref=False):
+def _build_design_prompt(style, elements, has_ref=False, has_mask=False):
     style_en = AI_STYLE_TAGS.get(style, 'modern minimalist style')
     parts = [
         'Photorealistic landscape design simulation.',
@@ -809,14 +814,27 @@ def _build_design_prompt(style, elements, has_ref=False):
         'Keep the original camera angle, perspective, buildings and property boundaries unchanged; '
         'redesign only the outdoor landscape areas.',
     ]
-    if has_ref:
+    if has_mask:
         parts.append(
-            'Two images are provided. The FIRST image is the client site photo: strictly '
-            'preserve its camera angle, perspective, buildings and property boundaries, and '
-            'transform only the landscape areas. The SECOND image is a completed project by '
-            'our own design team, provided purely as a style reference: follow its material '
-            'vocabulary, planting composition style and craftsmanship quality, but do NOT '
-            'copy its site layout or replace the client site with it.')
+            'A copy of the site photo overlaid with semi-transparent red markings is also '
+            'provided: redesign ONLY the red-marked region; every unmarked area must remain '
+            'exactly identical to the original site photo.')
+    if has_ref:
+        if has_mask:
+            # 有遮罩時圖片不只兩張，避免 FIRST/SECOND 序數誤導
+            parts.append(
+                'A completed project by our own design team is also provided purely as a '
+                'style reference: follow its material vocabulary, planting composition style '
+                'and craftsmanship quality, but do NOT copy its site layout or replace the '
+                'client site with it.')
+        else:
+            parts.append(
+                'Two images are provided. The FIRST image is the client site photo: strictly '
+                'preserve its camera angle, perspective, buildings and property boundaries, and '
+                'transform only the landscape areas. The SECOND image is a completed project by '
+                'our own design team, provided purely as a style reference: follow its material '
+                'vocabulary, planting composition style and craftsmanship quality, but do NOT '
+                'copy its site layout or replace the client site with it.')
     elems_en = [AI_ELEMENT_TAGS[e] for e in elements if e in AI_ELEMENT_TAGS]
     if elems_en:
         parts.append('Incorporate the following elements naturally: ' + '; '.join(elems_en) + '.')
@@ -825,20 +843,32 @@ def _build_design_prompt(style, elements, has_ref=False):
     return ' '.join(parts)
 
 def generate_design_image(photo_bytes, mime_type, style, elements,
-                          ref_bytes=None, ref_mime=None):
+                          ref_bytes=None, ref_mime=None,
+                          mask_bytes=None, mask_mime=None):
     """以 Gemini 影像模型將現場照片轉成景觀模擬設計圖，回傳 (bytes, mime)。
 
     可選 ref_bytes / ref_mime：本團隊完成作品照片，作為風格參照；
-    無參照時行為與舊版完全相同（向後相容）。
+    可選 mask_bytes / mask_mime：現場照疊上半透明紅色標記的合成圖，
+    紅色區域 = 唯一允許改造的範圍；皆未提供時行為與舊版完全相同（向後相容）。
     """
     key = _gemini_api_key()
     if not key:
         raise RuntimeError('AI 影像服務尚未啟用（未設定 GEMINI_API_KEY）')
     parts = [
-        {'text': _build_design_prompt(style, elements, has_ref=bool(ref_bytes))},
+        {'text': _build_design_prompt(style, elements, has_ref=bool(ref_bytes),
+                                      has_mask=bool(mask_bytes))},
         {'inline_data': {'mime_type': mime_type,
                          'data': base64.b64encode(photo_bytes).decode('ascii')}},
     ]
+    if mask_bytes:
+        parts.append({'text': (
+            'The next image is the SAME site photo overlaid with semi-transparent red '
+            'markings drawn by the client: the red-marked region is the ONLY area allowed '
+            'to be redesigned; every unmarked area must remain exactly identical to the '
+            'original site photo. The red tint is purely an annotation mask — the output '
+            'image must NOT contain any red tint, red markings or red color cast.')})
+        parts.append({'inline_data': {'mime_type': mask_mime or 'image/jpeg',
+                                      'data': base64.b64encode(mask_bytes).decode('ascii')}})
     if ref_bytes:
         parts.append({'text': (
             'Style reference image below — a completed landscape project by our design '
@@ -1168,6 +1198,25 @@ def _fetch_work_ref_photo(work):
     except Exception:
         return None
 
+_MASK_DATAURL_PREFIX = 'data:image/jpeg;base64,'
+_MASK_MAX_DATAURL_LEN = 8 * 1024 * 1024  # base64 字串上限 8MB
+
+def _decode_mask_overlay(raw):
+    """解碼畫筆遮罩 dataURL（data:image/jpeg;base64,...）→ (bytes, mime)。
+
+    前綴不符、超過 8MB、解碼失敗一律回 (None, None)：遮罩是選用功能，絕不擋生成。
+    """
+    raw = (raw or '').strip()
+    if not raw.startswith(_MASK_DATAURL_PREFIX) or len(raw) > _MASK_MAX_DATAURL_LEN:
+        return None, None
+    try:
+        data = base64.b64decode(raw[len(_MASK_DATAURL_PREFIX):], validate=True)
+    except Exception:
+        return None, None
+    if not data:
+        return None, None
+    return data, 'image/jpeg'
+
 def _ai_design_context(ref_work_id=None):
     """組 /ai-design 模板 context：標籤資料 + 側欄作品清單 + 參照作品（可選）。"""
     sidebar_works = []
@@ -1264,9 +1313,13 @@ def ai_design():
                     ref_mime = 'image/jpeg'
                     ref_used_id = ref_w.id
 
+        # 畫筆遮罩（可選）：解碼失敗就當沒有，絕不擋生成
+        mask_bytes, mask_mime = _decode_mask_overlay(request.form.get('mask_overlay', ''))
+
         try:
             gen_bytes, gen_mime = generate_design_image(src_bytes, src_mime, style, chosen,
-                                                        ref_bytes=ref_bytes, ref_mime=ref_mime)
+                                                        ref_bytes=ref_bytes, ref_mime=ref_mime,
+                                                        mask_bytes=mask_bytes, mask_mime=mask_mime)
         except Exception as e:
             flash(f'AI 生成失敗：{e}', 'error')
             return render_template('public/ai_design.html', **ctx)

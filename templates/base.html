@@ -71,8 +71,22 @@
     footer strong{color:#fff}
 
     @media(max-width:640px){
-      .nav-links .nav-hide{display:none}
       .section{padding:36px 0}
+    }
+
+    /* 手機導覽：≤768px 收成漢堡按鈕 + 全寬下拉面板（純內嵌零依賴） */
+    .nav-toggle{display:none;background:none;border:none;font-size:1.45rem;line-height:1;
+                color:var(--g900);cursor:pointer;padding:6px 12px;border-radius:8px;font-family:inherit}
+    .nav-toggle:hover{background:var(--g50)}
+    @media(max-width:768px){
+      .nav-toggle{display:block}
+      .nav-links{display:none;position:absolute;top:100%;left:0;right:0;background:#fff;
+                 border-bottom:1px solid var(--border);box-shadow:0 12px 24px rgba(0,0,0,.10);
+                 flex-direction:column;align-items:stretch;gap:2px;padding:10px 16px 14px}
+      .nav-links.open{display:flex}
+      .nav-links a{padding:12px 14px;font-size:.95rem}
+      .nav-links .nav-hide{display:block}   /* 下拉面板內全部連結都要呈現 */
+      .nav-links .btn-nav{text-align:center;justify-content:center;margin-top:6px}
     }
   </style>
   {% block head %}{% endblock %}
@@ -89,7 +103,8 @@
         </svg>
         台灣景觀聯盟
       </a>
-      <div class="nav-links">
+      <button type="button" class="nav-toggle" id="navToggle" aria-label="開啟選單" aria-expanded="false">☰</button>
+      <div class="nav-links" id="navLinks">
         <a href="{{ url_for('works') }}" class="nav-hide">瀏覽作品</a>
         <a href="{{ url_for('ai_design') }}"><i class="bi bi-stars"></i> AI 模擬設計</a>
         <a href="{{ url_for('contact') }}" class="nav-hide">聯絡我們</a>
@@ -139,5 +154,23 @@
   <strong>台灣景觀聯盟</strong> &nbsp;·&nbsp; 全台景觀設計與施工媒合平台<br>
   <span style="margin-top:6px;display:block;">© 2026 Taiwan Landscape Alliance</span>
 </footer>
+
+<script>
+(function () {
+  // 手機漢堡選單：點按鈕開合、點面板內連結或點面板外關閉
+  var t = document.getElementById('navToggle'), m = document.getElementById('navLinks');
+  if (!t || !m) return;
+  function close() { m.classList.remove('open'); t.setAttribute('aria-expanded', 'false'); }
+  t.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var open = m.classList.toggle('open');
+    t.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', function (e) {
+    if (m.classList.contains('open') && !m.contains(e.target)) close();
+  });
+  m.addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
+})();
+</script>
 </body>
 </html>

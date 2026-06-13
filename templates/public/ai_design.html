@@ -18,6 +18,18 @@
         background:#fff;cursor:pointer;transition:.15s}
   .drop:hover{border-color:var(--g500);background:var(--g50)}
   .drop img{max-width:100%;max-height:320px;border-radius:10px;margin-top:12px}
+  /* 畫筆遮罩畫板（手機觸控優先） */
+  #maskSection{display:none;margin-top:14px}
+  .mask-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+  .mask-btn{padding:7px 14px;border-radius:8px;border:1.5px solid var(--border);background:#fff;
+            font-size:.84rem;font-weight:600;color:var(--gray);cursor:pointer;transition:.15s;
+            font-family:inherit}
+  .mask-btn.on{background:var(--g700);border-color:var(--g700);color:#fff}
+  .mask-sep{width:1px;height:22px;background:var(--border)}
+  .mask-stage{position:relative;border-radius:10px;overflow:hidden;background:var(--g50);
+              touch-action:none;user-select:none;-webkit-user-select:none}
+  .mask-stage img{display:block;width:100%;height:auto;pointer-events:none}
+  .mask-stage canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;opacity:.4}
   #loading{display:none;position:fixed;inset:0;background:rgba(255,255,255,.92);z-index:999;
            flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center}
   .spinner{width:52px;height:52px;border:5px solid var(--g100);border-top-color:var(--g700);
@@ -90,6 +102,28 @@
           <img id="preview" style="display:none" alt="">
           <input type="file" id="photoInput" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif" style="display:none" required>
         </label>
+
+        <div id="maskSection">
+          <label style="margin-top:12px">🖌️ 圈出想改造的範圍（選用）</label>
+          <p style="font-size:.78rem;color:var(--gray);margin:0 0 8px">
+            用手指或滑鼠在照片上塗紅想改造的位置，沒塗到的地方 AI 會保持原樣；不塗則整體改造。
+          </p>
+          <div class="mask-tools">
+            <button type="button" class="mask-btn on" id="toolPen">🖌️ 畫筆</button>
+            <button type="button" class="mask-btn" id="toolEraser">🧽 橡皮擦</button>
+            <span class="mask-sep"></span>
+            <button type="button" class="mask-btn mask-size" data-size="18">小</button>
+            <button type="button" class="mask-btn mask-size on" data-size="36">中</button>
+            <button type="button" class="mask-btn mask-size" data-size="60">大</button>
+            <span class="mask-sep"></span>
+            <button type="button" class="mask-btn" id="maskClear">全部清除</button>
+          </div>
+          <div class="mask-stage" id="maskStage">
+            <img id="maskPhoto" alt="現場照片畫板">
+            <canvas id="maskCanvas" width="0" height="0"></canvas>
+          </div>
+        </div>
+        <input type="hidden" name="mask_overlay" id="maskOverlay">
       </div>
 
       <div class="form-group">
@@ -178,15 +212,130 @@
   const input = document.getElementById('photoInput');
   input.addEventListener('change', () => {
     const f = input.files[0];
-    if (!f) return;
+    if (!f) { maskSection.style.display = 'none'; resetMaskBoard(); return; }
     const img = document.getElementById('preview');
     img.src = URL.createObjectURL(f);
     img.style.display = 'block';
     document.getElementById('dropHint').textContent = f.name;
+    initMaskBoard(img.src);   // 換照片 → 重建畫板並清空舊筆跡
   });
   document.getElementById('aiForm').addEventListener('submit', () => {
+    buildMaskOverlay();       // 送出前先合成遮罩（同步，沒畫過則留空不送）
     document.getElementById('loading').style.display = 'flex';
   });
+
+  // ── 畫筆遮罩畫板（手機觸控優先；座標按顯示縮放比換算） ──────
+  const MASK_MAX_SIDE = 1280;                    // 合成圖最長邊上限，控制體積
+  const MASK_RED = 'rgb(220,40,40)';             // 不透明畫、canvas/合成各以 .4 透明度呈現
+  const MASK_ALPHA = 0.4;                        // 等效 rgba(220,40,40,.4)，且筆畫重疊不變深
+  const maskSection = document.getElementById('maskSection');
+  const maskPhoto   = document.getElementById('maskPhoto');
+  const maskCanvas  = document.getElementById('maskCanvas');
+  const maskInput   = document.getElementById('maskOverlay');
+  const mctx = maskCanvas.getContext('2d');
+  let maskMode = 'pen', brushSize = 36, hasDrawn = false, drawing = false, lastPt = null;
+  let photoImg = null;                           // 與畫板同源的 Image，合成時當底圖
+
+  function resetMaskBoard() {
+    hasDrawn = false; drawing = false; lastPt = null;
+    maskInput.value = '';
+    mctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  }
+
+  function initMaskBoard(url) {
+    photoImg = new Image();
+    photoImg.onload = () => {
+      const s = Math.min(1, MASK_MAX_SIDE / Math.max(photoImg.naturalWidth, photoImg.naturalHeight));
+      maskCanvas.width  = Math.max(1, Math.round(photoImg.naturalWidth  * s));
+      maskCanvas.height = Math.max(1, Math.round(photoImg.naturalHeight * s));
+      maskPhoto.src = url;
+      resetMaskBoard();
+      maskSection.style.display = 'block';
+    };
+    photoImg.src = url;
+  }
+
+  // 觸控/滑鼠座標 → canvas 內部像素（參考簽名板寫法：依 getBoundingClientRect 縮放比換算）
+  function canvasPoint(e) {
+    const r = maskCanvas.getBoundingClientRect();
+    const t = (e.touches && e.touches[0]) || e;
+    return { x: (t.clientX - r.left) * maskCanvas.width  / r.width,
+             y: (t.clientY - r.top)  * maskCanvas.height / r.height,
+             k: maskCanvas.width / r.width };   // 縮放比：讓筆刷在螢幕上維持固定粗細
+  }
+
+  function drawSeg(a, b, k) {
+    mctx.globalCompositeOperation = (maskMode === 'eraser') ? 'destination-out' : 'source-over';
+    mctx.strokeStyle = MASK_RED;
+    mctx.lineCap = 'round'; mctx.lineJoin = 'round';   // 圓頭線條
+    mctx.lineWidth = brushSize * k;
+    mctx.beginPath(); mctx.moveTo(a.x, a.y); mctx.lineTo(b.x, b.y); mctx.stroke();
+  }
+
+  function startDraw(e) {
+    e.preventDefault();                          // 畫圖時不滾動頁面
+    drawing = true;
+    lastPt = canvasPoint(e);
+    drawSeg(lastPt, lastPt, lastPt.k);           // 點一下也留一個圓點
+    if (maskMode === 'pen') hasDrawn = true;
+  }
+  function moveDraw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = canvasPoint(e);
+    drawSeg(lastPt, p, p.k);
+    lastPt = p;
+  }
+  function endDraw() { drawing = false; lastPt = null; }
+
+  maskCanvas.addEventListener('touchstart',  startDraw, { passive: false });
+  maskCanvas.addEventListener('touchmove',   moveDraw,  { passive: false });
+  maskCanvas.addEventListener('touchend',    endDraw);
+  maskCanvas.addEventListener('touchcancel', endDraw);
+  maskCanvas.addEventListener('mousedown',   startDraw);   // 桌機滑鼠也支援
+  window.addEventListener('mousemove', moveDraw);
+  window.addEventListener('mouseup',   endDraw);
+
+  // 工具列：畫筆／橡皮擦切換、筆刷大小、全部清除
+  const toolPen = document.getElementById('toolPen');
+  const toolEraser = document.getElementById('toolEraser');
+  function setMode(m) {
+    maskMode = m;
+    toolPen.classList.toggle('on', m === 'pen');
+    toolEraser.classList.toggle('on', m === 'eraser');
+  }
+  toolPen.addEventListener('click', () => setMode('pen'));
+  toolEraser.addEventListener('click', () => setMode('eraser'));
+  const sizeBtns = Array.from(document.querySelectorAll('.mask-size'));
+  sizeBtns.forEach(btn => btn.addEventListener('click', () => {
+    brushSize = parseInt(btn.dataset.size, 10) || 36;
+    sizeBtns.forEach(b => b.classList.toggle('on', b === btn));
+  }));
+  document.getElementById('maskClear').addEventListener('click', resetMaskBoard);
+
+  // 抽查 alpha：橡皮擦全擦掉的空白畫布不算「有畫過」
+  function maskHasInk() {
+    const d = mctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+    for (let i = 3; i < d.length; i += 16) { if (d[i] > 0) return true; }
+    return false;
+  }
+
+  // 送出前：照片 + 紅色筆跡合成一張 JPEG（最長邊 ≤1280）→ hidden input；失敗一律留空不擋生成
+  function buildMaskOverlay() {
+    maskInput.value = '';
+    if (!photoImg || !hasDrawn || maskCanvas.width < 2) return;
+    try {
+      if (!maskHasInk()) return;
+      const c = document.createElement('canvas');
+      c.width = maskCanvas.width; c.height = maskCanvas.height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(photoImg, 0, 0, c.width, c.height);
+      ctx.globalAlpha = MASK_ALPHA;
+      ctx.drawImage(maskCanvas, 0, 0);
+      ctx.globalAlpha = 1;
+      maskInput.value = c.toDataURL('image/jpeg', 0.85);
+    } catch (err) { maskInput.value = ''; }
+  }
 
   // ── 矛盾標籤互斥隱藏 ──────────────────────────────────────
   // groups：同群組只能擇一；pairs：兩兩矛盾
