@@ -89,6 +89,29 @@
       .nav-links .nav-hide{display:block}   /* 下拉面板內全部連結都要呈現 */
       .nav-links .btn-nav{text-align:center;justify-content:center;margin-top:6px}
     }
+
+    /* 帳號／管理下拉選單（把登入後的角色功能收起來，避免導覽列跑版） */
+    .nav-dd{position:relative}
+    .nav-dd-trigger{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;
+                    font-size:.9rem;font-weight:500;color:var(--gray);background:none;border:none;
+                    cursor:pointer;font-family:inherit}
+    .nav-dd-trigger:hover,.nav-dd.open .nav-dd-trigger{background:var(--g50);color:var(--g700)}
+    .nav-dd-menu{display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:194px;background:#fff;
+                 border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);
+                 padding:6px;flex-direction:column;gap:1px;z-index:200}
+    .nav-dd.open .nav-dd-menu{display:flex}
+    .nav-dd-menu a{padding:9px 12px;border-radius:7px;font-size:.88rem;color:var(--text)}
+    .nav-dd-menu a:hover{background:var(--g50)}
+    .nav-dd-head{font-size:.7rem;color:var(--gray);padding:7px 12px 3px;font-weight:700;letter-spacing:.03em}
+    .nav-dd-sep{height:1px;background:var(--border);margin:5px 6px}
+    @media(max-width:768px){
+      /* 漢堡面板內：下拉直接內嵌展開，不需觸發鈕 */
+      .nav-dd{width:100%}
+      .nav-dd-trigger{display:none}
+      .nav-dd-menu{display:flex;position:static;border:none;box-shadow:none;padding:0;min-width:0}
+      .nav-dd-menu a{padding:12px 14px;font-size:.95rem}
+      .nav-dd-head{padding:10px 14px 4px}
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -110,32 +133,47 @@
         <a href="{{ url_for('ai_design') }}"><i class="bi bi-stars"></i> AI 模擬設計</a>
         <a href="{{ url_for('contact') }}" class="nav-hide">聯絡我們</a>
 
-        {% if current_supplier() %}
-          <a href="{{ url_for('supplier_upload') }}" class="nav-hide">上傳素材</a>
-          <a href="{{ url_for('supplier_materials') }}" class="nav-hide">我的素材</a>
-          <a href="{{ url_for('supplier_logout') }}" class="nav-hide" style="color:var(--gray)">登出供應商</a>
+        {% if current_user() or current_supplier() or current_customer() %}
+        <div class="nav-dd" id="navDd">
+          <button type="button" class="nav-dd-trigger" id="navDdTrigger" aria-haspopup="true" aria-expanded="false">
+            <i class="bi bi-person-circle"></i> 帳號 <span style="font-size:.68rem">▾</span>
+          </button>
+          <div class="nav-dd-menu">
+            {% if current_user() %}
+              {% if is_admin() %}
+              <div class="nav-dd-head">管理員</div>
+              <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
+              <a href="{{ url_for('admin_analytics') }}"><i class="bi bi-graph-up"></i> 數據分析</a>
+              <div class="nav-dd-sep"></div>
+              {% endif %}
+              <div class="nav-dd-head">夥伴</div>
+              <a href="{{ url_for('upload') }}">上傳作品</a>
+              <a href="{{ url_for('my_profile') }}">公司資料</a>
+              <a href="{{ url_for('my_works') }}">我的作品</a>
+              <a href="{{ url_for('logout') }}" style="color:var(--gray)">登出夥伴</a>
+            {% endif %}
+            {% if current_supplier() %}
+              {% if current_user() %}<div class="nav-dd-sep"></div>{% endif %}
+              <div class="nav-dd-head">供應商</div>
+              <a href="{{ url_for('supplier_upload') }}">上傳素材</a>
+              <a href="{{ url_for('supplier_materials') }}">我的素材</a>
+              <a href="{{ url_for('supplier_logout') }}" style="color:var(--gray)">登出供應商</a>
+            {% endif %}
+            {% if current_customer() %}
+              {% if current_user() or current_supplier() %}<div class="nav-dd-sep"></div>{% endif %}
+              <div class="nav-dd-head">客戶</div>
+              <a href="{{ url_for('my_designs') }}"><i class="bi bi-images"></i> 我的模擬圖</a>
+              <a href="{{ url_for('account_logout') }}" style="color:var(--gray)">登出</a>
+            {% endif %}
+          </div>
+        </div>
         {% endif %}
 
-        {% if current_user() %}
-          {% if is_admin() %}
-          <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
-          <a href="{{ url_for('admin_analytics') }}"><i class="bi bi-graph-up"></i> 數據</a>
-          {% endif %}
-          <a href="{{ url_for('upload') }}">上傳作品</a>
-          <a href="{{ url_for('my_profile') }}" class="nav-hide">公司資料</a>
-          <a href="{{ url_for('my_works') }}" class="nav-hide">我的作品</a>
-          <a href="{{ url_for('logout') }}" class="nav-hide">登出夥伴</a>
-        {% else %}
-          {% if not current_supplier() %}
+        {% if not current_user() and not current_supplier() %}
           <a href="{{ url_for('supplier_login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">供應商入口</a>
-          {% endif %}
           <a href="{{ url_for('login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">夥伴登入</a>
         {% endif %}
-
-        {% if current_customer() %}
-          <a href="{{ url_for('my_designs') }}"><i class="bi bi-images"></i> 我的模擬圖</a>
-          <a href="{{ url_for('account_logout') }}" style="color:var(--gray)">登出</a>
-        {% else %}
+        {% if not current_customer() %}
           <a href="{{ url_for('account_login') }}">登入</a>
           <a href="{{ url_for('account_register') }}" class="btn-nav">註冊</a>
         {% endif %}
@@ -172,6 +210,21 @@
     if (m.classList.contains('open') && !m.contains(e.target)) close();
   });
   m.addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
+})();
+(function () {
+  // 帳號下拉選單：桌機點擊開合、點外面關閉（手機在漢堡內已內嵌展開，不需此邏輯）
+  var dd = document.getElementById('navDd'), trg = document.getElementById('navDdTrigger');
+  if (!dd || !trg) return;
+  trg.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var open = dd.classList.toggle('open');
+    trg.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', function (e) {
+    if (dd.classList.contains('open') && !dd.contains(e.target)) {
+      dd.classList.remove('open'); trg.setAttribute('aria-expanded', 'false');
+    }
+  });
 })();
 </script>
 <script>
