@@ -1927,6 +1927,12 @@ def admin_work(work_id):
             work.tags = request.form.get('tags', work.tags)
             work.price = request.form.get('price', work.price)
             work.note = request.form.get('note','')
+            # 換封面：把選中的照片排到第一張（封面 = photo_ids 第一個）
+            cover_id = request.form.get('cover_id', '').strip()
+            if cover_id:
+                _ids = [x for x in (work.photo_ids or '').split(',') if x.strip()]
+                if cover_id in _ids:
+                    work.photo_ids = ','.join([cover_id] + [x for x in _ids if x != cover_id])
             if action == 'approve':
                 work.status = 'published'
                 flash('已審核通過並上架', 'success')
@@ -1947,7 +1953,8 @@ def admin_work(work_id):
         db.session.commit()
         return redirect(url_for('admin_dashboard'))
 
-    photos = photo_urls(work.photo_ids, size='w800')
+    _ids   = [x for x in (work.photo_ids or '').split(',') if x.strip()]
+    photos = list(zip(_ids, photo_urls(work.photo_ids, size='w800')))  # (id, url)
     return render_template('admin/work_edit.html', work=work, photos=photos)
 
 @app.route('/platform')

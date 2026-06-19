@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 {% block title %}審核作品 — {{ work.name }}{% endblock %}
 {% block content %}
+<style>
+  .cover-radio:checked + img { border-color:#2e7d32 !important; box-shadow:0 0 0 1px #2e7d32; }
+</style>
 <div class="section" style="padding-top:28px">
   <div class="container" style="max-width:760px">
     <a href="{{ url_for('admin_dashboard') }}" style="font-size:.85rem;color:var(--gray);display:inline-flex;align-items:center;gap:4px;margin-bottom:20px">
@@ -10,18 +13,25 @@
     <div class="section-title" style="margin-bottom:4px">審核作品</div>
     <p style="color:var(--gray);margin-bottom:24px">上傳者：{{ work.uploader_email }} &nbsp;·&nbsp; {{ work.created_at.strftime('%Y-%m-%d') if work.created_at else '' }}</p>
 
-    <!-- 照片預覽 -->
-    {% if photos %}
-    <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:24px">
-      {% for p in photos %}
-      <img src="{{ p }}" style="height:160px;border-radius:8px;object-fit:cover;flex-shrink:0">
-      {% endfor %}
-    </div>
-    {% endif %}
-
     <div class="card" style="padding:28px">
       <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if photos %}
+        <div class="form-group">
+          <label>封面照片（點一張設為封面，存檔後生效；綠框為目前封面）</label>
+          <div style="display:flex;gap:10px;overflow-x:auto;padding:4px 0">
+            {% for pid, p in photos %}
+            <label style="position:relative;flex-shrink:0;cursor:pointer" title="設為封面">
+              <input type="radio" name="cover_id" value="{{ pid }}" class="cover-radio"
+                     {% if loop.first %}checked{% endif %}
+                     style="position:absolute;top:6px;left:6px;width:18px;height:18px;z-index:2">
+              <img src="{{ p }}"
+                   style="height:160px;border-radius:8px;object-fit:cover;display:block;border:3px solid transparent">
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
         <div class="form-group">
           <label>作品名稱</label>
           <input class="form-control" name="name" value="{{ work.name }}" required>
