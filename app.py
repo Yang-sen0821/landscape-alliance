@@ -1469,6 +1469,7 @@ def contact():
         )
         db.session.add(contact_obj)
         db.session.commit()
+        _log_event('contact_submit', work_id=work_id or None)
         flash('已收到您的訊息，我們會盡快與您聯絡！', 'success')
         return redirect(url_for('contact'))
     work_id = request.args.get('work_id', '')
@@ -1762,6 +1763,21 @@ def api_detect_tags():
         return {'tags': [], 'error': '偵測服務暫時無法使用'}
     return {'tags': tags}
 
+@app.route('/api/track', methods=['POST'])
+def api_track():
+    """前端輕量頁面瀏覽追蹤；任何狀況都回 204，永不影響使用者頁面。"""
+    try:
+        # 每 IP 每小時上限，防灌量（page_view 已在前端去重，正常用量極低）
+        if not _rl_check('track', max_calls=600, window_seconds=3600):
+            return ('', 204)
+        data = request.get_json(silent=True) or {}
+        page = (data.get('page') or '').strip()[:120]
+        if page:
+            _log_event('page_view', tags=page)
+    except Exception:
+        pass
+    return ('', 204)
+
 @app.route('/my-profile', methods=['GET', 'POST'])
 @login_required
 def my_profile():
@@ -1912,6 +1928,90 @@ def admin_dashboard():
                            ai_rows=ai_rows, top_views=top_views,
                            customers=customers)
 
+@app.route('/admin/analytics')
+@login_required
+@admin_required
+def admin_analytics():
+    """後台數據分析（近 30 天）。所有查詢唯讀且各自 try/except，失敗只回空、不影響頁面。"""
+    since = datetime.utcnow() - timedelta(days=30)
+
+    def _safe(fn, default):
+        try:
+            return fn()
+        except Exception:
+            db.session.rollback()
+            return default
+
+    # 每日流量：page_view 次數 + 不重複訪客（distinct session_key）
+    def _daily():
+        rows = (db.session.query(func.date(UserEvent.created_at),
+                                 func.count(UserEvent.id),
+                                 func.count(func.distinct(UserEvent.session_key)))
+                .filter(UserEvent.etype == 'page_view', UserEvent.created_at >= since)
+                .group_by(func.date(UserEvent.created_at))
+                .order_by(func.date(UserEvent.created_at)).all())
+        return [{'date': str(d), 'views': v, 'visitors': u} for d, v, u in rows]
+    daily = _safe(_daily, [])
+    traffic_max = max([d['views'] for d in daily], default=0) or 1
+
+    # 各頁面瀏覽次數 Top
+    def _pages():
+        rows = (db.session.query(UserEvent.tags, func.count(UserEvent.id))
+                .filter(UserEvent.etype == 'page_view', UserEvent.created_at >= since)
+                .group_by(UserEvent.tags)
+                .order_by(func.count(UserEvent.id).desc()).limit(15).all())
+        return [{'page': p or '(未知)', 'count': c} for p, c in rows]
+    pages = _safe(_pages, [])
+
+    # 近 30 天總覽
+    def _totals():
+        def cnt(etype):
+            return (db.session.query(func.count(UserEvent.id))
+                    .filter(UserEvent.etype == etype, UserEvent.created_at >= since)
+                    .scalar()) or 0
+        uniq = (db.session.query(func.count(func.distinct(UserEvent.session_key)))
+                .filter(UserEvent.created_at >= since).scalar()) or 0
+        return {'visitors': uniq, 'page_view': cnt('page_view'),
+                'work_view': cnt('work_view'), 'ai_generate': cnt('ai_generate'),
+                'ai_refine': cnt('ai_refine'), 'contact': cnt('contact_submit'),
+                'investor': cnt('investor_inquiry_submit')}
+    totals = _safe(_totals, {})
+
+    # 作品瀏覽 Top10（近 30 天）
+    def _top_works():
+        rows = (db.session.query(UserEvent.work_id, func.count(UserEvent.id))
+                .filter(UserEvent.etype == 'work_view', UserEvent.created_at >= since,
+                        UserEvent.work_id.isnot(None))
+                .group_by(UserEvent.work_id)
+                .order_by(func.count(UserEvent.id).desc()).limit(10).all())
+        names = ({w.id: w.name for w in Work.query.filter(
+                     Work.id.in_([r[0] for r in rows])).all()} if rows else {})
+        return [{'name': names.get(wid, wid), 'count': c} for wid, c in rows]
+    top_works = _safe(_top_works, [])
+
+    # 夥伴成效：每位夥伴旗下作品的 work_view 加總 Top
+    def _partner():
+        rows = (db.session.query(Work.uploader_email, func.count(UserEvent.id))
+                .join(UserEvent, UserEvent.work_id == Work.id)
+                .filter(UserEvent.etype == 'work_view', UserEvent.created_at >= since)
+                .group_by(Work.uploader_email)
+                .order_by(func.count(UserEvent.id).desc()).limit(10).all())
+        return [{'email': e, 'count': c} for e, c in rows]
+    partner = _safe(_partner, [])
+
+    # 累計成長（總量）
+    def _growth():
+        out = {}
+        for label, model in (('夥伴', Member), ('作品', Work),
+                             ('客戶', AppUser), ('供應商', Supplier)):
+            out[label] = (db.session.query(func.count(model.id)).scalar()) or 0
+        return out
+    growth = _safe(_growth, {})
+
+    return render_template('admin/analytics.html', since=since, daily=daily,
+                           traffic_max=traffic_max, pages=pages, totals=totals,
+                           top_works=top_works, partner=partner, growth=growth)
+
 @app.route('/admin/work/<work_id>', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -1989,6 +2089,7 @@ def contact_investor():
         )
         db.session.add(inquiry)
         db.session.commit()
+        _log_event('investor_inquiry_submit')
         flash('已收到您的訊息，楊森會在 48 小時內親自回覆。', 'success')
         return redirect(url_for('contact_investor'))
     return render_template('public/contact_investor.html')

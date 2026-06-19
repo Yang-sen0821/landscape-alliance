@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}數據分析 — 後台{% endblock %}
+{% block content %}
+<style>
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+  .stat{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px}
+  .stat .n{font-size:1.6rem;font-weight:700;color:var(--g700);line-height:1.2}
+  .stat .l{font-size:.8rem;color:var(--gray);margin-top:2px}
+  .a-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:18px}
+  .a-card h3{font-size:1rem;margin-bottom:14px;color:var(--g900)}
+  .bar-row{display:flex;align-items:center;gap:8px;font-size:.78rem;margin-bottom:4px}
+  .bar-row .d{width:60px;color:var(--gray);flex-shrink:0}
+  .bar-row .track{flex:1;background:var(--g50);border-radius:4px;height:16px;overflow:hidden}
+  .bar-row .fill{height:100%;background:var(--g500);border-radius:4px}
+  .bar-row .v{width:96px;text-align:right;flex-shrink:0;color:var(--text)}
+  table.a-tbl{width:100%;border-collapse:collapse;font-size:.85rem}
+  table.a-tbl td{padding:7px 4px;border-bottom:1px solid var(--border)}
+  table.a-tbl td:last-child{text-align:right;font-weight:600;color:var(--g700)}
+  .empty{color:var(--gray);font-size:.85rem;padding:8px 0}
+</style>
+<div class="section" style="padding-top:28px">
+  <div class="container" style="max-width:960px">
+    <a href="{{ url_for('admin_dashboard') }}" style="font-size:.85rem;color:var(--gray);display:inline-flex;align-items:center;gap:4px;margin-bottom:16px">
+      <i class="bi bi-arrow-left"></i> 返回後台
+    </a>
+    <div class="section-title" style="margin-bottom:4px">數據分析</div>
+    <p style="color:var(--gray);margin-bottom:22px">統計區間：近 30 天（{{ since.strftime('%Y-%m-%d') }} 起）</p>
+
+    <!-- 總覽 -->
+    <div class="stat-grid">
+      <div class="stat"><div class="n">{{ totals.get('visitors', 0) }}</div><div class="l">不重複訪客</div></div>
+      <div class="stat"><div class="n">{{ totals.get('page_view', 0) }}</div><div class="l">頁面瀏覽</div></div>
+      <div class="stat"><div class="n">{{ totals.get('work_view', 0) }}</div><div class="l">作品瀏覽</div></div>
+      <div class="stat"><div class="n">{{ totals.get('ai_generate', 0) }}</div><div class="l">AI 生成</div></div>
+      <div class="stat"><div class="n">{{ totals.get('ai_refine', 0) }}</div><div class="l">AI 修圖</div></div>
+      <div class="stat"><div class="n">{{ totals.get('contact', 0) }}</div><div class="l">聯絡表單</div></div>
+      <div class="stat"><div class="n">{{ totals.get('investor', 0) }}</div><div class="l">投資詢問</div></div>
+    </div>
+
+    <!-- 每日流量 -->
+    <div class="a-card">
+      <h3>每日流量（瀏覽量）</h3>
+      {% if daily %}
+        {% for d in daily %}
+        <div class="bar-row">
+          <span class="d">{{ d.date[5:] }}</span>
+          <span class="track"><span class="fill" style="width:{{ (d.views / traffic_max * 100) | round(1) }}%"></span></span>
+          <span class="v">{{ d.views }} 次 · {{ d.visitors }} 人</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">尚無頁面瀏覽資料（前端追蹤上線後會開始累積）。</div>
+      {% endif %}
+    </div>
+
+    <!-- 頁面瀏覽 Top -->
+    <div class="a-card">
+      <h3>各頁面瀏覽次數</h3>
+      {% if pages %}
+      <table class="a-tbl">
+        {% for p in pages %}<tr><td>{{ p.page }}</td><td>{{ p.count }}</td></tr>{% endfor %}
+      </table>
+      {% else %}<div class="empty">尚無資料。</div>{% endif %}
+    </div>
+
+    <!-- 作品瀏覽 Top10 -->
+    <div class="a-card">
+      <h3>熱門作品 Top 10</h3>
+      {% if top_works %}
+      <table class="a-tbl">
+        {% for w in top_works %}<tr><td>{{ w.name }}</td><td>{{ w.count }}</td></tr>{% endfor %}
+      </table>
+      {% else %}<div class="empty">尚無作品瀏覽資料。</div>{% endif %}
+    </div>
+
+    <!-- 夥伴成效 -->
+    <div class="a-card">
+      <h3>夥伴成效（旗下作品被瀏覽總數）</h3>
+      {% if partner %}
+      <table class="a-tbl">
+        {% for p in partner %}<tr><td>{{ p.email }}</td><td>{{ p.count }}</td></tr>{% endfor %}
+      </table>
+      {% else %}<div class="empty">尚無資料。</div>{% endif %}
+    </div>
+
+    <!-- 累計成長 -->
+    <div class="a-card">
+      <h3>平台累計</h3>
+      <div class="stat-grid" style="margin-bottom:0">
+        {% for label, n in growth.items() %}
+        <div class="stat"><div class="n">{{ n }}</div><div class="l">{{ label }}</div></div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

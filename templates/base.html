@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}台灣景觀聯盟{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -118,6 +119,7 @@
         {% if current_user() %}
           {% if is_admin() %}
           <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
+          <a href="{{ url_for('admin_analytics') }}"><i class="bi bi-graph-up"></i> 數據</a>
           {% endif %}
           <a href="{{ url_for('upload') }}">上傳作品</a>
           <a href="{{ url_for('my_profile') }}" class="nav-hide">公司資料</a>
@@ -170,6 +172,26 @@
     if (m.classList.contains('open') && !m.contains(e.target)) close();
   });
   m.addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
+})();
+</script>
+<script>
+(function () {
+  // 頁面瀏覽追蹤：sessionStorage 去重（同頁 30 分鐘內只送一次），失敗永不影響頁面
+  try {
+    var path = location.pathname || '/';
+    var key = 'pv:' + path, now = Date.now();
+    var last = +(sessionStorage.getItem(key) || 0);
+    if (now - last < 1800000) return;
+    sessionStorage.setItem(key, now);
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'X-CSRFToken': meta ? meta.content : '' },
+      body: JSON.stringify({ page: path }),
+      keepalive: true
+    }).catch(function () {});
+  } catch (e) {}
 })();
 </script>
 </body>
