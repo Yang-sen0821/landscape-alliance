@@ -144,12 +144,17 @@
               <div class="nav-dd-head">管理員</div>
               <a href="{{ url_for('admin_dashboard') }}"><i class="bi bi-speedometer2"></i> 後台</a>
               <a href="{{ url_for('admin_analytics') }}"><i class="bi bi-graph-up"></i> 數據分析</a>
+              <a href="{{ url_for('admin_accounts') }}"><i class="bi bi-people"></i> 帳號總覽</a>
               <div class="nav-dd-sep"></div>
               {% endif %}
               <div class="nav-dd-head">夥伴</div>
+              {% if is_partner() %}
               <a href="{{ url_for('upload') }}">上傳作品</a>
-              <a href="{{ url_for('my_profile') }}">公司資料</a>
               <a href="{{ url_for('my_works') }}">我的作品</a>
+              {% else %}
+              <a href="{{ url_for('apply_partner') }}">申請成為同行</a>
+              {% endif %}
+              <a href="{{ url_for('my_profile') }}">公司資料</a>
               <a href="{{ url_for('logout') }}" style="color:var(--gray)">登出夥伴</a>
             {% endif %}
             {% if current_supplier() %}
@@ -169,8 +174,11 @@
         </div>
         {% endif %}
 
+        {# 已有供應商 session 時隱藏「供應商入口」、已有夥伴 session 時隱藏「夥伴登入」 #}
         {% if not current_user() and not current_supplier() %}
           <a href="{{ url_for('supplier_login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">供應商入口</a>
+        {% endif %}
+        {% if not current_user() %}
           <a href="{{ url_for('login') }}" class="nav-hide" style="color:var(--gray);font-size:.85rem">夥伴登入</a>
         {% endif %}
         {% if not current_customer() %}

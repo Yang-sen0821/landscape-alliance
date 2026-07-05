@@ -23,6 +23,65 @@
       <button class="tab-btn" onclick="showTab('contacts')">諮詢紀錄 <span style="background:#e0e7ff;color:#3730a3;border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ contacts|length }}</span></button>
       <button class="tab-btn" onclick="showTab('members')">會員 <span style="background:var(--g100);color:var(--g700);border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ members|length }}</span></button>
       <button class="tab-btn" onclick="showTab('aigen')">AI 生成記錄 <span style="background:#fce7f3;color:#9d174d;border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ ai_rows|length }}</span></button>
+      <button class="tab-btn" onclick="showTab('applications')">申請審核 <span style="background:#ffedd5;color:#9a3412;border-radius:20px;padding:2px 8px;font-size:.78rem;margin-left:4px">{{ partner_apps|length + supplier_apps|length }}</span></button>
+      <a class="tab-btn" href="{{ url_for('admin_accounts') }}" style="text-decoration:none;display:inline-flex;align-items:center">帳號總覽 <i class="bi bi-box-arrow-up-right" style="font-size:.7rem;margin-left:4px"></i></a>
+    </div>
+
+    <!-- 申請審核（同行 + 供應商） -->
+    <div id="tab-applications" class="tab-content">
+      <div style="font-size:.88rem;font-weight:600;color:var(--g700);margin-bottom:8px">同行夥伴申請（{{ partner_apps|length }} 件）</div>
+      {% if partner_apps %}
+      <div class="card">
+        {% for p in partner_apps %}
+        <div class="work-row">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">{{ p.email }}
+              {% set m = app_members.get(p.email) %}
+              {% if m %}<span style="color:var(--gray);font-weight:400;font-size:.85rem">（{{ m.name or '' }}／{{ m.company or '' }}）</span>{% endif %}
+            </div>
+            <div style="font-size:.82rem;color:var(--gray);margin-top:2px">
+              縣市：{{ p.county or '—' }} &nbsp;·&nbsp; 服務範圍：{{ p.service_areas or '—' }}
+              &nbsp;·&nbsp; 最小接案金額：{{ p.min_amount or '—' }}
+              &nbsp;·&nbsp; 申請時間：{{ p.applied_at.strftime('%Y-%m-%d %H:%M') if p.applied_at else '—' }}
+            </div>
+            {% if p.intro %}<div style="font-size:.82rem;color:var(--gray);margin-top:2px">{{ p.intro }}</div>{% endif %}
+          </div>
+          <form method="post" action="{{ url_for('admin_partner_application', pid=p.id) }}" style="display:flex;gap:6px;flex-shrink:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm">核准</button>
+            <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">拒絕</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:28px 0">目前沒有待審核的同行申請</p>
+      {% endif %}
+
+      <div style="font-size:.88rem;font-weight:600;color:var(--g700);margin:24px 0 8px">供應商申請（{{ supplier_apps|length }} 件）</div>
+      {% if supplier_apps %}
+      <div class="card">
+        {% for s in supplier_apps %}
+        <div class="work-row">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700">{{ s.company or '（未填公司）' }}</div>
+            <div style="font-size:.82rem;color:var(--gray);margin-top:2px">
+              {{ s.email }} &nbsp;·&nbsp; 聯絡人：{{ s.contact_name or '—' }}
+              &nbsp;·&nbsp; {{ s.phone or '—' }}
+              &nbsp;·&nbsp; 申請時間：{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
+            </div>
+          </div>
+          <form method="post" action="{{ url_for('admin_supplier_application', sid=s.id) }}" style="display:flex;gap:6px;flex-shrink:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm">核准</button>
+            <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">拒絕</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:28px 0">目前沒有待審核的供應商申請</p>
+      {% endif %}
     </div>
 
     <!-- 素材待審 -->
@@ -49,6 +108,7 @@
             {% endif %}
           </div>
           <form method="post" action="{{ url_for('admin_material', mat_id=m.id) }}" style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" name="action" value="approve" class="btn btn-primary btn-sm">上架</button>
             <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">退回</button>
           </form>
@@ -71,6 +131,7 @@
             <div style="font-size:.82rem;color:var(--gray)">{{ m.supplier_email }} &nbsp;·&nbsp; {{ m.spec or '' }}</div>
           </div>
           <form method="post" action="{{ url_for('admin_material', mat_id=m.id) }}" style="display:flex;gap:6px;flex-shrink:0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="text" name="extra_tags" placeholder="補充標籤（逗號分隔）" class="form-control" style="width:160px;font-size:.8rem;padding:6px 10px">
             <button type="submit" name="action" value="add_tags" class="btn btn-outline btn-sm">補標籤</button>
             <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">下架</button>

@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}帳號總覽 — 台灣景觀聯盟{% endblock %}
+{% block head %}
+<style>
+  .acct-row{display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .acct-row:last-child{border-bottom:none}
+  .acct-actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap}
+  .acct-actions form{display:inline}
+  .sec-title{font-size:1.05rem;font-weight:700;color:var(--g900);margin:28px 0 10px}
+  .sec-title:first-of-type{margin-top:0}
+  .badge-none{background:var(--g100);color:var(--gray)}
+  .badge-active{background:#dcfce7;color:#166534}
+</style>
+{% endblock %}
+{% block content %}
+<div class="section" style="padding-top:28px">
+  <div class="container">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div class="section-title" style="margin-bottom:0">帳號總覽</div>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline btn-sm"><i class="bi bi-arrow-left"></i> 回後台</a>
+    </div>
+
+    {# ── 狀態 badge 巨集 ── #}
+    {% macro pbadge(st) -%}
+      {%- if st == 'approved' %}<span class="badge badge-published">同行·已核准</span>
+      {%- elif st == 'pending' %}<span class="badge badge-pending">同行·審核中</span>
+      {%- elif st == 'rejected' %}<span class="badge badge-rejected">同行·未通過</span>
+      {%- else %}<span class="badge badge-none">同行·未申請</span>{% endif -%}
+    {%- endmacro %}
+    {% macro sbadge(st) -%}
+      {%- if st == 'active' %}<span class="badge badge-active">供應商·已核准</span>
+      {%- elif st == 'pending' %}<span class="badge badge-pending">供應商·審核中</span>
+      {%- elif st == 'rejected' %}<span class="badge badge-rejected">供應商·未通過</span>
+      {%- else %}<span class="badge badge-none">供應商·無</span>{% endif -%}
+    {%- endmacro %}
+
+    <!-- ── 同行會員（members） ── -->
+    <div class="sec-title"><i class="bi bi-people"></i> 會員（members，{{ members|length }} 位）</div>
+    <div class="card">
+      {% for m in members %}
+      {% set ps = pstatus.get(m.email, 'none') %}
+      {% set ss = sstatus.get(m.email, 'none') %}
+      <div class="acct-row">
+        <div style="flex:1;min-width:220px">
+          <strong>{{ m.name or '（未填姓名）' }}</strong>
+          <span style="color:var(--gray)">— {{ m.company or '' }}</span>
+          <div style="font-size:.82rem;color:var(--gray)">
+            {{ m.email }}
+            &nbsp;·&nbsp; 最後登入：{{ m.last_login.strftime('%Y-%m-%d %H:%M') if m.last_login else '從未' }}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">{{ pbadge(ps) }}{{ sbadge(ss) }}</div>
+        <div class="acct-actions">
+          {% if ps == 'approved' %}
+          <form method="post" action="{{ url_for('admin_account_partner') }}"
+                onsubmit="return confirm('確定撤銷 {{ m.email }} 的同行資格？撤銷後對方將無法上傳作品')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ m.email }}">
+            <button type="submit" name="action" value="revoke" class="btn btn-danger btn-sm">撤銷同行</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin_account_partner') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ m.email }}">
+            <button type="submit" name="action" value="grant" class="btn btn-primary btn-sm">設為同行</button>
+          </form>
+          {% endif %}
+          {% if ss == 'active' %}
+          <form method="post" action="{{ url_for('admin_account_supplier') }}"
+                onsubmit="return confirm('確定撤銷 {{ m.email }} 的供應商資格？（轉為待審核）')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ m.email }}">
+            <button type="submit" name="action" value="revoke" class="btn btn-danger btn-sm">撤銷供應商</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin_account_supplier') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ m.email }}">
+            <button type="submit" name="action" value="grant" class="btn btn-outline btn-sm">設為供應商</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:28px 0">尚無會員</p>
+      {% endfor %}
+    </div>
+
+    <!-- ── 客戶（app_users） ── -->
+    <div class="sec-title"><i class="bi bi-person"></i> 客戶（app_users，{{ app_users|length }} 位）</div>
+    <div class="card">
+      {% for u in app_users %}
+      {% set ss = sstatus.get(u.email, 'none') %}
+      <div class="acct-row">
+        <div style="flex:1;min-width:220px">
+          <strong>{{ u.name or '（未填姓名）' }}</strong>
+          {% if u.google_sub %}<span class="badge" style="background:#e8f0fe;color:#1a73e8">Google</span>{% endif %}
+          <div style="font-size:.82rem;color:var(--gray)">
+            {{ u.email }}
+            &nbsp;·&nbsp; 最後登入：{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else '從未' }}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">{{ sbadge(ss) }}</div>
+        <div class="acct-actions">
+          {% if ss == 'active' %}
+          <form method="post" action="{{ url_for('admin_account_supplier') }}"
+                onsubmit="return confirm('確定撤銷 {{ u.email }} 的供應商資格？（轉為待審核）')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ u.email }}">
+            <button type="submit" name="action" value="revoke" class="btn btn-danger btn-sm">撤銷供應商</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin_account_supplier') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ u.email }}">
+            <button type="submit" name="action" value="grant" class="btn btn-outline btn-sm">設為供應商</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:28px 0">尚無客戶</p>
+      {% endfor %}
+    </div>
+
+    <!-- ── 供應商（suppliers） ── -->
+    <div class="sec-title"><i class="bi bi-box-seam"></i> 供應商（suppliers，{{ suppliers|length }} 家）</div>
+    <div class="card">
+      {% for s in suppliers %}
+      <div class="acct-row">
+        <div style="flex:1;min-width:220px">
+          <strong>{{ s.company or '（未填公司）' }}</strong>
+          <span style="color:var(--gray)">— {{ s.contact_name or '' }}</span>
+          <div style="font-size:.82rem;color:var(--gray)">
+            {{ s.email }} &nbsp;·&nbsp; {{ s.phone or '—' }}
+            &nbsp;·&nbsp; 最後登入：{{ s.last_login.strftime('%Y-%m-%d %H:%M') if s.last_login else '從未' }}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">{{ sbadge(s.status or 'none') }}</div>
+        <div class="acct-actions">
+          {% if s.status == 'active' %}
+          <form method="post" action="{{ url_for('admin_account_supplier') }}"
+                onsubmit="return confirm('確定撤銷 {{ s.email }} 的供應商資格？撤銷後對方將無法登入上傳素材')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ s.email }}">
+            <button type="submit" name="action" value="revoke" class="btn btn-danger btn-sm">撤銷</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin_account_supplier') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="email" value="{{ s.email }}">
+            <button type="submit" name="action" value="grant" class="btn btn-primary btn-sm">核准</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p style="color:var(--gray);text-align:center;padding:28px 0">尚無供應商</p>
+      {% endfor %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

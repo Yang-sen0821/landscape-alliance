@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}公司資料 — 台灣景觀聯盟{% endblock %}
+{% block title %}申請成為同行夥伴 — 台灣景觀聯盟{% endblock %}
 {% block head %}
 <style>
-  .profile-header{background:linear-gradient(135deg,var(--g900),var(--g700));color:#fff;padding:32px 0 28px}
-  .profile-header h1{font-size:1.4rem;font-weight:700}
+  .apply-header{background:linear-gradient(135deg,var(--g900),var(--g700));color:#fff;padding:32px 0 28px}
+  .apply-header h1{font-size:1.4rem;font-weight:700}
   .county-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:8px}
   .county-label{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:.84rem;background:#fff;transition:.15s;user-select:none}
   .county-label:hover{border-color:var(--g500)}
@@ -12,57 +12,47 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="profile-header">
+<div class="apply-header">
   <div class="container">
-    <h1>公司資料</h1>
+    <h1>申請成為同行夥伴</h1>
     <p style="opacity:.82;margin-top:4px;font-size:.9rem">
-      {{ member.company or '' }} &nbsp;·&nbsp; {{ member.name or '' }}
+      通過審核後即可上傳作品、曝光公司資訊，觸及全台業主
     </p>
   </div>
 </div>
 
 <div class="container" style="max-width:680px;padding-top:36px;padding-bottom:48px">
 
-  <!-- 我的身分：同行 / 供應商 申請狀態與入口 -->
-  {% set ps = partner_status(current_user()) %}
-  {% set ss = supplier_status(current_user()) %}
-  <div class="card" style="padding:22px 26px;margin-bottom:20px">
-    <div style="font-weight:700;color:var(--g900);margin-bottom:14px"><i class="bi bi-person-badge"></i> 我的身分</div>
-
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:.9rem;font-weight:600;width:88px">同行夥伴</span>
-      {% if is_admin() %}
-        <span class="badge badge-published">管理員（視同同行）</span>
-      {% elif ps == 'approved' %}
-        <span class="badge badge-published">已核准</span>
-      {% elif ps == 'pending' %}
-        <span class="badge badge-pending">審核中</span>
-        <a href="{{ url_for('apply_partner') }}" style="font-size:.82rem">查看申請</a>
-      {% elif ps == 'rejected' %}
-        <span class="badge badge-rejected">未通過</span>
-        <a href="{{ url_for('apply_partner') }}" class="btn btn-outline btn-sm">重新申請</a>
-      {% else %}
-        <span class="badge" style="background:var(--g100);color:var(--gray)">未申請</span>
-        <a href="{{ url_for('apply_partner') }}" class="btn btn-primary btn-sm"><i class="bi bi-send"></i> 申請成為同行</a>
-      {% endif %}
-    </div>
-
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0">
-      <span style="font-size:.9rem;font-weight:600;width:88px">供應商</span>
-      {% if ss == 'active' %}
-        <span class="badge badge-published">已核准</span>
-        <a href="{{ url_for('supplier_login') }}" style="font-size:.82rem">前往供應商後台</a>
-      {% elif ss == 'pending' %}
-        <span class="badge badge-pending">審核中</span>
-      {% elif ss == 'rejected' %}
-        <span class="badge badge-rejected">未通過</span>
-      {% else %}
-        <span class="badge" style="background:var(--g100);color:var(--gray)">未申請</span>
-        <a href="{{ url_for('supplier_register') }}" class="btn btn-outline btn-sm"><i class="bi bi-box-seam"></i> 申請成為廠商</a>
-      {% endif %}
+  {% if status == 'approved' %}
+  <div class="card" style="padding:40px;text-align:center">
+    <div style="font-size:2.4rem;margin-bottom:12px">✅</div>
+    <div style="font-size:1.15rem;font-weight:700;color:var(--g900)">您已是同行夥伴</div>
+    <p style="color:var(--gray);margin-top:8px;font-size:.9rem">可以直接上傳作品與管理公司資料</p>
+    <div style="display:flex;gap:12px;justify-content:center;margin-top:22px">
+      <a href="{{ url_for('upload') }}" class="btn btn-primary"><i class="bi bi-cloud-upload"></i> 上傳作品</a>
+      <a href="{{ url_for('my_profile') }}" class="btn btn-outline">公司資料</a>
     </div>
   </div>
 
+  {% elif status == 'pending' %}
+  <div class="card" style="padding:40px;text-align:center">
+    <div style="font-size:2.4rem;margin-bottom:12px">⏳</div>
+    <div style="font-size:1.15rem;font-weight:700;color:var(--g900)">申請審核中</div>
+    <p style="color:var(--gray);margin-top:8px;font-size:.9rem">
+      您的申請已於 {{ profile.applied_at.strftime('%Y-%m-%d %H:%M') if profile.applied_at else '—' }} 送出，
+      管理員審核通過後即可使用同行功能
+    </p>
+    <div style="margin-top:22px">
+      <a href="{{ url_for('my_profile') }}" class="btn btn-outline">回公司資料</a>
+    </div>
+  </div>
+
+  {% else %}
+  {% if status == 'rejected' %}
+  <div class="flash error" style="margin-bottom:20px">
+    前次申請未通過（或資格已被撤銷）。您可以修改以下資料後重新送出申請。
+  </div>
+  {% endif %}
   <div class="card" style="padding:32px">
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -81,9 +71,9 @@
         <label>服務範圍（可複選）</label>
         <p style="font-size:.82rem;color:var(--gray);margin-bottom:10px">勾選可承接案場的縣市，讓客戶更容易找到您</p>
         {% set saved_areas = (profile.service_areas or '').split(',') %}
-        <div class="county-grid" id="county-grid">
+        <div class="county-grid">
           {% for c in tw_counties %}
-          <label class="county-label {% if c in saved_areas %}checked{% endif %}" id="lbl-{{ loop.index }}">
+          <label class="county-label {% if c in saved_areas %}checked{% endif %}">
             <input type="checkbox" name="service_areas" value="{{ c }}"
                    {% if c in saved_areas %}checked{% endif %}
                    onchange="toggleLabel(this)">
@@ -121,19 +111,14 @@
 
       <button type="submit" class="btn btn-primary"
               style="width:100%;justify-content:center;padding:13px;margin-top:24px">
-        <i class="bi bi-check2-circle"></i> 儲存資料
+        <i class="bi bi-send"></i> 送出申請
       </button>
+      <p style="text-align:center;font-size:.82rem;color:var(--gray);margin-top:10px">
+        送出後由管理員審核，通過後即可上傳作品
+      </p>
     </form>
   </div>
-
-  <div style="text-align:center;margin-top:20px;display:flex;gap:24px;justify-content:center">
-    <a href="{{ url_for('upload') }}" style="font-size:.88rem;color:var(--gray)">
-      <i class="bi bi-cloud-upload"></i> 上傳作品
-    </a>
-    <a href="{{ url_for('my_works') }}" style="font-size:.88rem;color:var(--gray)">
-      <i class="bi bi-images"></i> 我的作品
-    </a>
-  </div>
+  {% endif %}
 </div>
 
 <script>

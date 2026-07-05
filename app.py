@@ -229,6 +229,7 @@ class Member(db.Model):
     phone = db.Column(db.String(20))
     status = db.Column(db.String(20), default='active')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)  # 最後登入時間（登入成功時更新）
     works = db.relationship('Work', backref='uploader', lazy=True, cascade='all, delete-orphan')
 
 class Work(db.Model):
@@ -275,8 +276,9 @@ class Supplier(db.Model):
     company = db.Column(db.String(120))
     contact_name = db.Column(db.String(120))
     phone = db.Column(db.String(20))
-    status = db.Column(db.String(20), default='active')
+    status = db.Column(db.String(20), default='active')  # pending=待審核 active=已核准 rejected=已拒絕
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)  # 最後登入時間（登入成功時更新）
     materials = db.relationship('Material', backref='supplier', lazy=True, cascade='all, delete-orphan')
 
 class Material(db.Model):
@@ -305,6 +307,10 @@ class PartnerProfile(db.Model):
     line_id = db.Column(db.String(120))
     website = db.Column(db.String(255))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # 同行審核狀態：none=未申請 pending=審核中 approved=已核准 rejected=已拒絕/已撤銷
+    status = db.Column(db.String(20), default='none')
+    applied_at = db.Column(db.DateTime)   # 送出申請時間
+    reviewed_at = db.Column(db.DateTime)  # 管理員審核時間
 
 class AiDesign(db.Model):
     __tablename__ = 'ai_designs'
@@ -346,6 +352,7 @@ class AppUser(db.Model):
     password_hash = db.Column(db.String(255), nullable=True)  # Google-only 帳號可為空
     google_sub = db.Column(db.String(64), unique=True, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)  # 最後登入時間（登入成功時更新）
 
 class UserEvent(db.Model):
     """行為事件記錄（瀏覽作品 / AI 生成等），供推薦與後台統計使用。"""
@@ -459,6 +466,38 @@ def find_member(email):
 def get_partner_profile(email):
     return PartnerProfile.query.filter_by(email=email.lower()).first() or {}
 
+def partner_status(email):
+    """同行審核狀態：none / pending / approved / rejected（none=尚未申請）。
+    每次呼叫直接查 DB，不快取在 session，核准或撤銷後立即生效。"""
+    p = PartnerProfile.query.filter_by(email=(email or '').lower()).first()
+    return (p.status or 'none') if p else 'none'
+
+def supplier_status(email):
+    """供應商帳號狀態：none / pending / active / rejected（none=無供應商帳號）。"""
+    s = Supplier.query.filter_by(email=(email or '').lower()).first()
+    return (s.status or 'none') if s else 'none'
+
+def is_partner():
+    """目前登入會員是否為已核准同行（管理員視同同行）。每請求查 DB，即時生效。"""
+    email = current_user()
+    if not email:
+        return False
+    if is_admin():
+        return True
+    return partner_status(email) == 'approved'
+
+def partner_required(f):
+    """同行專屬功能（上傳/編修作品）：須登入且同行申請已核准；管理員不受限。"""
+    @wraps(f)
+    def wrapped(*a, **kw):
+        if not current_user():
+            return redirect(url_for('login', next=request.path))
+        if not is_partner():
+            flash('此功能僅開放「已核准的同行夥伴」使用，請先提出申請', 'error')
+            return redirect(url_for('apply_partner'))
+        return f(*a, **kw)
+    return wrapped
+
 def current_supplier():
     return session.get('supplier_email')
 
@@ -466,6 +505,13 @@ def supplier_required(f):
     @wraps(f)
     def wrapped(*a, **kw):
         if not current_supplier():
+            return redirect(url_for('supplier_login', next=request.path))
+        # 每請求查 DB 確認帳號仍為已核准（active）狀態，核准/撤銷即時生效
+        s = find_supplier(current_supplier())
+        if not s or s.status != 'active':
+            session.pop('supplier_email', None)
+            session.pop('supplier_company', None)
+            flash('您的供應商帳號尚未通過審核或已被停權，如有疑問請聯絡管理員', 'error')
             return redirect(url_for('supplier_login', next=request.path))
         return f(*a, **kw)
     return wrapped
@@ -610,6 +656,66 @@ def get_materials(supplier_email=None, status=None):
         query = query.filter_by(status=status)
     return query.all()
 
+# ── 單一登入接橋（identity bridge） ─────────────────────────────
+@app.before_request
+def _identity_bridge():
+    """單一登入接橋：從任一入口登入後，自動補上同一 Email 本來就擁有的其他身分。
+
+    原則：只「授予該 Email 原本就有的資格」，不做任何資格提升——
+    - 夥伴（member）：members 表有該 Email 且同行審核 approved 才接橋；
+      管理員特例：Email 等於 ADMIN_EMAIL 即接橋（is_admin 只比對 email，
+      即使 members 表無此列也放行）。
+    - 客戶（app_users）：表中有該 Email 即接橋。
+    - 供應商（suppliers）：該 Email 存在且 status == 'active' 才接橋。
+    每請求開頭執行、查詢皆為索引輕量查詢；任何例外一律吞掉，不影響原請求。
+    """
+    if request.endpoint == 'static':
+        return  # 靜態檔不需身分，省 DB 查詢
+    try:
+        # 來源 Email：以已登入的身分為準（夥伴 > 客戶 > 供應商）
+        src = (session.get('email') or session.get('customer_email')
+               or session.get('supplier_email'))
+        if not src:
+            return
+        # 1) 補夥伴身分（session['email']）
+        if not session.get('email'):
+            m = find_member(src)
+            if src == ADMIN_EMAIL:
+                session['email'] = src
+                session['name'] = ((m.name if m else '') or
+                                   session.get('customer_name', ''))
+            elif m and partner_status(src) == 'approved':
+                session['email'] = src
+                session['name'] = m.name or session.get('customer_name', '')
+        # 2) 補客戶身分（session['customer_email']）
+        if not session.get('customer_email'):
+            u = find_app_user(src)
+            if u:
+                session['customer_email'] = u.email
+                session['customer_name'] = u.name or session.get('name', '')
+        # 3) 補供應商身分（session['supplier_email']）
+        if not session.get('supplier_email'):
+            s = find_supplier(src)
+            if s and s.status == 'active':
+                session['supplier_email'] = s.email
+                session['supplier_company'] = s.company or ''
+    except Exception:
+        # 接橋失敗絕不影響原請求；rollback 避免壞掉的交易狀態外洩
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+def _clear_identity_session():
+    """登出時統一清除所有身分 session 鍵。
+
+    因為接橋會自動補齊其他身分，若只清單一身分，下個請求會立刻被接橋
+    補回來（等於登不出去），故三個登出路由一律全清，避免殘留半身分。
+    """
+    for k in ('email', 'name', 'customer_email', 'customer_name',
+              'supplier_email', 'supplier_company'):
+        session.pop(k, None)
+
 # ── Sheet helpers ──────────────────────────────────────────────
 def get_works(status=None):
     query = Work.query
@@ -710,6 +816,9 @@ app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
                              avg_rating=avg_rating,
                              current_supplier=current_supplier,
                              current_customer=current_customer,
+                             is_partner=is_partner,
+                             partner_status=partner_status,
+                             supplier_status=supplier_status,
                              master_tags=MASTER_TAGS,
                              tw_counties=TW_COUNTIES)
 
@@ -1508,11 +1617,12 @@ def register():
                 existing.company = company
                 existing.phone = phone
                 existing.status = 'active'
+                existing.last_login = datetime.utcnow()
                 db.session.commit()
                 session['email'] = email
                 session['name'] = name
                 flash(f'歡迎回來，{name}！帳號已重新啟用', 'success')
-                return redirect(url_for('upload'))
+                return redirect(url_for('my_profile'))
             flash('此 Email 已註冊', 'error')
             return render_template('auth/register.html')
 
@@ -1524,15 +1634,16 @@ def register():
             company=company,
             phone=phone,
             status='active',
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            last_login=datetime.utcnow()
         )
         db.session.add(member)
         db.session.commit()
 
         session['email'] = email
         session['name']  = name
-        flash(f'歡迎，{name}！帳號建立完成', 'success')
-        return redirect(url_for('upload'))
+        flash(f'歡迎，{name}！帳號建立完成。若要上傳作品，請先申請成為同行夥伴', 'success')
+        return redirect(url_for('my_profile'))
     return render_template('auth/register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -1544,20 +1655,26 @@ def login():
         if m and m.status == 'active':
             ok, _upgraded = _verify_password_for_user(pw, m)
             if ok:
-                db.session.commit()  # persist any hash upgrade
+                m.last_login = datetime.utcnow()
+                db.session.commit()  # persist last_login + any hash upgrade
                 session['email'] = email
                 session['name']  = m.name or ''
                 nxt = request.form.get('next', '')
-                default = url_for('admin_dashboard') if email == ADMIN_EMAIL else url_for('upload')
+                # 管理員 → 後台；已核准同行 → 上傳作品；其餘 → 公司資料頁（可申請身分）
+                if email == ADMIN_EMAIL:
+                    default = url_for('admin_dashboard')
+                elif partner_status(email) == 'approved':
+                    default = url_for('upload')
+                else:
+                    default = url_for('my_profile')
                 return _safe_redirect(nxt, default)
         flash('帳號或密碼錯誤', 'error')
     return render_template('auth/login.html', next=request.args.get('next',''))
 
 @app.route('/logout')
 def logout():
-    # 只清夥伴 session key，保留客戶（customer_*）與供應商登入狀態
-    session.pop('email', None)
-    session.pop('name', None)
+    # 單一登入接橋後，登出一律清除全部身分，避免被接橋自動補回
+    _clear_identity_session()
     return redirect(url_for('index'))
 
 # ── 客戶帳號（/account，與夥伴帳號完全分離） ────────────────────
@@ -1591,6 +1708,7 @@ def account_register():
             name=name,
             password_hash=_hash(pw),
             created_at=datetime.utcnow(),
+            last_login=datetime.utcnow(),
         )
         db.session.add(user)
         db.session.commit()
@@ -1611,6 +1729,8 @@ def account_login():
         if u and u.password_hash:
             ok, _needs_upgrade = _verify_password(pw, u.password_hash)
             if ok:
+                u.last_login = datetime.utcnow()
+                db.session.commit()
                 session['customer_email'] = u.email
                 session['customer_name']  = u.name or ''
                 return _safe_redirect(nxt, url_for('ai_design'))
@@ -1622,9 +1742,8 @@ def account_login():
 
 @app.route('/account/logout')
 def account_logout():
-    # 只清客戶 session key，不動夥伴 / 供應商登入狀態
-    session.pop('customer_email', None)
-    session.pop('customer_name', None)
+    # 單一登入接橋後，登出一律清除全部身分，避免被接橋自動補回
+    _clear_identity_session()
     return redirect(url_for('index'))
 
 @app.route('/account/google', methods=['POST'])
@@ -1680,6 +1799,8 @@ def account_google():
             )
             db.session.add(user)
         db.session.commit()
+    user.last_login = datetime.utcnow()
+    db.session.commit()
     session['customer_email'] = user.email
     session['customer_name']  = user.name or ''
     flash(f'歡迎，{user.name or user.email}！', 'success')
@@ -1694,7 +1815,7 @@ def my_designs():
 
 # ── Member ────────────────────────────────────────────────────
 @app.route('/upload', methods=['GET', 'POST'])
-@login_required
+@partner_required
 def upload():
     if request.method == 'POST':
         name   = request.form.get('name','').strip()
@@ -1741,9 +1862,9 @@ def upload():
     return render_template('member/upload.html')
 
 @app.route('/api/detect-tags', methods=['POST'])
-@login_required
+@partner_required
 def api_detect_tags():
-    """作品照片 AI 偵測標籤（會員限定）。任何 Gemini 錯誤回 200 + 空標籤，不回 500。"""
+    """作品照片 AI 偵測標籤（同行限定，屬上傳作品流程）。任何 Gemini 錯誤回 200 + 空標籤，不回 500。"""
     # 限流：同 IP 每日 30 次
     if not _rl_check('detect_tags', max_calls=30, window_seconds=86400):
         return {'tags': [], 'error': '今日 AI 偵測次數已達上限（每日 30 次）'}
@@ -1827,6 +1948,72 @@ def my_profile():
     member  = find_member(current_user()) or {}
     return render_template('member/profile.html', profile=profile, member=member)
 
+# ── 同行資格申請 ────────────────────────────────────────────────
+@app.route('/apply/partner', methods=['GET', 'POST'])
+@login_required
+def apply_partner():
+    """申請成為同行夥伴：送出後 status='pending' 待管理員審核；
+    rejected 可修改資料後重新申請；approved / pending 不重複收件。"""
+    profile = PartnerProfile.query.filter_by(email=current_user()).first()
+    status  = (profile.status or 'none') if profile else 'none'
+
+    if request.method == 'POST':
+        if status == 'approved':
+            flash('您已是同行夥伴，無需再次申請', 'success')
+            return redirect(url_for('my_profile'))
+        if status == 'pending':
+            flash('您的申請正在審核中，請耐心等候', 'error')
+            return redirect(url_for('apply_partner'))
+
+        county   = request.form.get('county','').strip()
+        service  = ','.join(request.form.getlist('service_areas'))
+        min_amt  = request.form.get('min_amount','').strip()
+        intro    = request.form.get('intro','').strip()
+        line_id  = request.form.get('line_id','').strip()
+        website  = request.form.get('website','').strip()
+
+        ok, err = _check_field_lengths(
+            縣市=(county, 50), 服務縣市=(service, 500), 最小接案金額=(min_amt, 50),
+            LINE_ID=(line_id, 120), 官網=(website, 255),
+        )
+        if not ok:
+            flash(err, 'error')
+            return redirect(url_for('apply_partner'))
+
+        now = datetime.utcnow()
+        if profile:
+            profile.county = county
+            profile.service_areas = service
+            profile.min_amount = min_amt
+            profile.intro = intro
+            profile.line_id = line_id
+            profile.website = website
+            profile.updated_at = now
+        else:
+            profile = PartnerProfile(
+                id=str(uuid.uuid4())[:8],
+                email=current_user(),
+                county=county,
+                service_areas=service,
+                min_amount=min_amt,
+                intro=intro,
+                line_id=line_id,
+                website=website,
+                updated_at=now,
+            )
+            db.session.add(profile)
+        profile.status = 'pending'
+        profile.applied_at = now
+        profile.reviewed_at = None
+        db.session.commit()
+
+        flash('申請已送出！管理員審核通過後，即可上傳與管理作品', 'success')
+        return redirect(url_for('apply_partner'))
+
+    member = find_member(current_user()) or {}
+    return render_template('member/apply_partner.html',
+                           profile=profile or {}, member=member, status=status)
+
 @app.route('/my-works')
 @login_required
 def my_works():
@@ -1845,6 +2032,15 @@ def admin_dashboard():
     members  = Member.query.all()
     mats_pending = get_materials(status='pending')
     mats_active  = get_materials(status='active')
+
+    # ── 身分申請審核（同行 + 供應商） ──────────────────────────
+    partner_apps  = (PartnerProfile.query.filter_by(status='pending')
+                     .order_by(PartnerProfile.applied_at.asc()).all())
+    supplier_apps = (Supplier.query.filter_by(status='pending')
+                     .order_by(Supplier.created_at.asc()).all())
+    _app_emails = [p.email for p in partner_apps]
+    app_members = ({m.email: m for m in Member.query.filter(Member.email.in_(_app_emails)).all()}
+                   if _app_emails else {})
 
     # ── AI 生成記錄（最近 50 筆）──────────────────────────────
     ai_designs = AiDesign.query.order_by(AiDesign.created_at.desc()).limit(50).all()
@@ -1925,6 +2121,9 @@ def admin_dashboard():
                            members=members,
                            mats_pending=mats_pending,
                            mats_active=mats_active,
+                           partner_apps=partner_apps,
+                           supplier_apps=supplier_apps,
+                           app_members=app_members,
                            ai_rows=ai_rows, top_views=top_views,
                            customers=customers)
 
@@ -2120,17 +2319,23 @@ def supplier_register():
         if existing:
             if _is_reclaimable(existing):
                 # 待重辦帳號：用原 Email 重新註冊即接回原帳號（素材保留）
+                # 注意：不改動 status——若管理員已核准（active）可直接登入，
+                # 否則維持原審核狀態，避免重辦變成繞過審核的後門
                 existing.password_hash = _hash(pw)
                 existing.legacy_pw_hash = None
                 existing.company = company
                 existing.contact_name = contact
                 existing.phone = phone
-                existing.status = 'active'
+                if existing.status == 'active':
+                    existing.last_login = datetime.utcnow()
+                    db.session.commit()
+                    session['supplier_email']   = email
+                    session['supplier_company'] = company
+                    flash(f'歡迎回來，{company}！帳號已重新啟用', 'success')
+                    return redirect(url_for('supplier_upload'))
                 db.session.commit()
-                session['supplier_email']   = email
-                session['supplier_company'] = company
-                flash(f'歡迎回來，{company}！帳號已重新啟用', 'success')
-                return redirect(url_for('supplier_upload'))
+                flash('帳號已重新啟用，待管理員審核通過後即可登入上傳素材', 'success')
+                return redirect(url_for('supplier_login'))
             flash('此 Email 已註冊', 'error')
             return render_template('supplier/register.html')
 
@@ -2141,16 +2346,14 @@ def supplier_register():
             company=company,
             contact_name=contact,
             phone=phone,
-            status='active',
+            status='pending',  # 新註冊一律待審核，管理員核准後才可登入
             created_at=datetime.utcnow()
         )
         db.session.add(supplier)
         db.session.commit()
 
-        session['supplier_email']   = email
-        session['supplier_company'] = company
-        flash(f'歡迎，{company}！', 'success')
-        return redirect(url_for('supplier_upload'))
+        flash('申請已送出！管理員審核通過後，即可登入上傳產品素材', 'success')
+        return redirect(url_for('supplier_login'))
     return render_template('supplier/register.html')
 
 @app.route('/supplier/login', methods=['GET','POST'])
@@ -2159,21 +2362,29 @@ def supplier_login():
         email = request.form.get('email','').strip().lower()
         pw    = request.form.get('password','').strip()
         s     = find_supplier(email)
-        if s and s.status == 'active':
+        if s:
             ok, _upgraded = _verify_password_for_user(pw, s)
-            if ok:
-                db.session.commit()  # persist any hash upgrade
+            if ok and s.status == 'active':
+                s.last_login = datetime.utcnow()
+                db.session.commit()  # persist last_login + any hash upgrade
                 session['supplier_email']   = email
                 session['supplier_company'] = s.company or ''
                 nxt = request.form.get('next', '')
                 return _safe_redirect(nxt, url_for('supplier_upload'))
+            if ok:
+                db.session.commit()  # 保留密碼升級
+                if s.status == 'pending':
+                    flash('您的供應商申請仍在審核中，通過後即可登入', 'error')
+                else:
+                    flash('此帳號未通過審核或已停用，如有疑問請聯絡管理員', 'error')
+                return render_template('supplier/login.html', next=request.args.get('next',''))
         flash('帳號或密碼錯誤', 'error')
     return render_template('supplier/login.html', next=request.args.get('next',''))
 
 @app.route('/supplier/logout')
 def supplier_logout():
-    session.pop('supplier_email', None)
-    session.pop('supplier_company', None)
+    # 單一登入接橋後，登出一律清除全部身分，避免被接橋自動補回
+    _clear_identity_session()
     return redirect(url_for('index'))
 
 @app.route('/supplier/upload', methods=['GET','POST'])
@@ -2265,6 +2476,148 @@ def admin_material(mat_id):
     db.session.commit()
     return redirect(url_for('admin_dashboard') + '#materials')
 
+# ── Admin 身分申請審核 ─────────────────────────────────────────
+@app.route('/admin/application/partner/<pid>', methods=['POST'])
+@login_required
+@admin_required
+def admin_partner_application(pid):
+    """同行申請審核：核准 → approved；拒絕 → rejected（可重新申請）。"""
+    p = PartnerProfile.query.filter_by(id=pid).first()
+    if not p:
+        abort(404)
+    action = request.form.get('action')
+    if action == 'approve':
+        p.status = 'approved'
+        flash(f'已核准 {p.email} 成為同行夥伴', 'success')
+    elif action == 'reject':
+        p.status = 'rejected'
+        flash(f'已拒絕 {p.email} 的同行申請', 'success')
+    else:
+        abort(400)
+    p.reviewed_at = datetime.utcnow()
+    db.session.commit()
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/application/supplier/<sid>', methods=['POST'])
+@login_required
+@admin_required
+def admin_supplier_application(sid):
+    """供應商申請審核：核准 → active（可登入）；拒絕 → rejected。"""
+    s = Supplier.query.filter_by(id=sid).first()
+    if not s:
+        abort(404)
+    action = request.form.get('action')
+    if action == 'approve':
+        s.status = 'active'
+        flash(f'已核准 {s.company or s.email} 的供應商申請', 'success')
+    elif action == 'reject':
+        s.status = 'rejected'
+        flash(f'已拒絕 {s.company or s.email} 的供應商申請', 'success')
+    else:
+        abort(400)
+    db.session.commit()
+    return redirect(url_for('admin_dashboard'))
+
+# ── Admin 帳號總覽與直接授權 ───────────────────────────────────
+@app.route('/admin/accounts')
+@login_required
+@admin_required
+def admin_accounts():
+    """三套帳號總覽（同行會員 / 客戶 / 供應商），附身分狀態與直接授權操作。"""
+    members   = Member.query.order_by(Member.created_at.desc()).all()
+    app_users = AppUser.query.order_by(AppUser.created_at.desc()).all()
+    suppliers = Supplier.query.order_by(Supplier.created_at.desc()).all()
+    # 一次撈齊狀態對照表，避免逐列查詢
+    pstatus = {p.email: (p.status or 'none') for p in PartnerProfile.query.all()}
+    sstatus = {s.email: (s.status or 'none') for s in suppliers}
+    return render_template('admin/accounts.html',
+                           members=members, app_users=app_users,
+                           suppliers=suppliers, pstatus=pstatus, sstatus=sstatus)
+
+@app.route('/admin/account/partner', methods=['POST'])
+@login_required
+@admin_required
+def admin_account_partner():
+    """直接授權/撤銷同行身分（不經申請流程）。"""
+    email  = (request.form.get('email') or '').strip().lower()
+    action = request.form.get('action')
+    if not email:
+        abort(400)
+    p = PartnerProfile.query.filter_by(email=email).first()
+    now = datetime.utcnow()
+    if action == 'grant':
+        if not p:
+            p = PartnerProfile(id=str(uuid.uuid4())[:8], email=email,
+                               applied_at=now, updated_at=now)
+            db.session.add(p)
+        p.status = 'approved'
+        p.reviewed_at = now
+        flash(f'已將 {email} 設為同行夥伴', 'success')
+    elif action == 'revoke':
+        if not p:
+            flash(f'{email} 沒有同行資料，無需撤銷', 'error')
+            return redirect(url_for('admin_accounts'))
+        p.status = 'rejected'
+        p.reviewed_at = now
+        flash(f'已撤銷 {email} 的同行資格', 'success')
+    else:
+        abort(400)
+    db.session.commit()
+    return redirect(url_for('admin_accounts'))
+
+@app.route('/admin/account/supplier', methods=['POST'])
+@login_required
+@admin_required
+def admin_account_supplier():
+    """直接授權/撤銷供應商身分。
+    該 email 尚無供應商帳號時，以會員/客戶資料建立：
+    - 有密碼（members / app_users 皆為 werkzeug 相容格式）→ 直接沿用，同一組密碼即可登入
+    - 無密碼（Google 註冊客戶）→ 標記 NEEDS_REGISTER，
+      該用戶到「供應商註冊」用原 Email 重新設定密碼即可接回（沿用既有待重辦機制）"""
+    email  = (request.form.get('email') or '').strip().lower()
+    action = request.form.get('action')
+    if not email:
+        abort(400)
+    s = find_supplier(email)
+    now = datetime.utcnow()
+    if action == 'grant':
+        if s:
+            s.status = 'active'
+            flash(f'已核准 {email} 的供應商資格', 'success')
+        else:
+            m = find_member(email)
+            u = find_app_user(email)
+            if not m and not u:
+                flash(f'{email} 不在任何帳號表中，無法建立供應商帳號', 'error')
+                return redirect(url_for('admin_accounts'))
+            src_hash = (m.password_hash if m else None) or (u.password_hash if u else None)
+            s = Supplier(
+                id=str(uuid.uuid4())[:8],
+                email=email,
+                password_hash=src_hash or 'NEEDS_REGISTER',
+                company=((m.company if m else '') or (u.name if u else '') or ''),
+                contact_name=((m.name if m else '') or (u.name if u else '') or ''),
+                phone=((m.phone if m else '') or ''),
+                status='active',
+                created_at=now,
+            )
+            db.session.add(s)
+            if src_hash:
+                flash(f'已建立並核准 {email} 的供應商帳號（沿用原帳號密碼登入）', 'success')
+            else:
+                flash(f'已建立並核准 {email} 的供應商帳號；該帳號原以 Google 登入無密碼，'
+                      f'請通知對方到「供應商註冊」用原 Email 重新設定密碼即可啟用', 'success')
+    elif action == 'revoke':
+        if not s:
+            flash(f'{email} 沒有供應商帳號，無需撤銷', 'error')
+            return redirect(url_for('admin_accounts'))
+        s.status = 'pending'
+        flash(f'已撤銷 {email} 的供應商資格（轉為待審核）', 'success')
+    else:
+        abort(400)
+    db.session.commit()
+    return redirect(url_for('admin_accounts'))
+
 @app.errorhandler(403)
 def e403(e):
     return render_template('error.html', code=403, msg='沒有權限'), 403
@@ -2273,12 +2626,94 @@ def e403(e):
 def e404(e):
     return render_template('error.html', code=404, msg='頁面不存在'), 404
 
+# ── 開機自跑遷移器 ──────────────────────────────────────────────
+# 對應 migrations/2026-07-04_account_roles.sql，語句逐字取自該檔（去除 BEGIN/COMMIT，
+# 交易改由程式控制）。修改時請與 .sql 檔保持同步。
+_MIGRATION_2026_07_04_NAME = '2026-07-04_account_roles'
+_MIGRATION_2026_07_04_STMTS = [
+    # ── A-1. partner_profiles：審核狀態欄位 ─────────────────────
+    """ALTER TABLE partner_profiles ADD COLUMN IF NOT EXISTS status      VARCHAR(20) DEFAULT 'none';""",
+    """ALTER TABLE partner_profiles ADD COLUMN IF NOT EXISTS applied_at  TIMESTAMP;""",
+    """ALTER TABLE partner_profiles ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;""",
+    # ── A-2. 三套帳號表：last_login ─────────────────────────────
+    """ALTER TABLE members   ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;""",
+    """ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;""",
+    """ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;""",
+    # ── B-1. 既有同行資料全部撤權（保留資料），管理員本人核准 ────
+    """UPDATE partner_profiles
+   SET status = 'rejected', reviewed_at = NOW()
+ WHERE email IS DISTINCT FROM 'g2349311@gmail.com';""",
+    """UPDATE partner_profiles
+   SET status = 'approved', reviewed_at = NOW()
+ WHERE email = 'g2349311@gmail.com';""",
+    # ── B-2. 管理員在 members 卻沒有 partner_profiles 列 → 補建一列 approved ──
+    """INSERT INTO partner_profiles (id, email, status, applied_at, reviewed_at, updated_at)
+SELECT substr(md5(random()::text), 1, 8),
+       'g2349311@gmail.com', 'approved', NOW(), NOW(), NOW()
+ WHERE EXISTS (SELECT 1 FROM members WHERE email = 'g2349311@gmail.com')
+   AND NOT EXISTS (SELECT 1 FROM partner_profiles WHERE email = 'g2349311@gmail.com');""",
+    # ── B-3. 既有供應商全部轉待審核，管理員本人（若有供應商帳號）維持 active ──
+    """UPDATE suppliers
+   SET status = 'pending'
+ WHERE email IS DISTINCT FROM 'g2349311@gmail.com';""",
+    """UPDATE suppliers
+   SET status = 'active'
+ WHERE email = 'g2349311@gmail.com';""",
+]
+
+def _run_startup_migrations():
+    """開機自跑遷移器：部署後應用程式啟動時，自動執行一次性 schema／資料遷移。
+
+    - 只針對 PostgreSQL（生產庫）；本地 SQLite fallback 直接跳過
+      （pg_advisory_xact_lock 與 IS DISTINCT FROM 皆為 PG 語法）
+    - schema_migrations 表記錄已執行的遷移名稱，重複啟動不會重跑
+    - pg_advisory_xact_lock 防 Render 多 worker 同時啟動的競態：
+      同一時間只有一個 worker 能進入遷移交易，其餘等它 COMMIT 後
+      查到記錄即跳過
+    - fail-open：遷移失敗只 rollback 並印醒目錯誤，不讓 app 起不來，
+      網站至少能跑舊功能
+    """
+    from sqlalchemy import text as _sql_text
+    if db.engine.dialect.name != 'postgresql':
+        print('[MIGRATE] 非 PostgreSQL（本地 SQLite fallback 模式），跳過開機遷移器')
+        return
+    try:
+        # (a) 遷移記錄表（獨立交易，冪等）
+        with db.engine.begin() as conn:
+            conn.execute(_sql_text(
+                "CREATE TABLE IF NOT EXISTS schema_migrations "
+                "(name TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT NOW())"))
+        # (b)~(d) 單一交易：advisory lock → 查記錄 → 逐句執行 → 寫記錄 → COMMIT
+        # with begin() 區塊結束自動 COMMIT；任何一句失敗自動 ROLLBACK 全部
+        with db.engine.begin() as conn:
+            conn.execute(_sql_text(
+                "SELECT pg_advisory_xact_lock(hashtext('musen_schema_migrations'))"))
+            done = conn.execute(
+                _sql_text("SELECT 1 FROM schema_migrations WHERE name = :n"),
+                {'n': _MIGRATION_2026_07_04_NAME}).first()
+            if done:
+                print(f'[MIGRATE] {_MIGRATION_2026_07_04_NAME} 已執行過，跳過')
+                return
+            for stmt in _MIGRATION_2026_07_04_STMTS:
+                conn.execute(_sql_text(stmt))
+            conn.execute(
+                _sql_text("INSERT INTO schema_migrations (name) VALUES (:n)"),
+                {'n': _MIGRATION_2026_07_04_NAME})
+        print(f'[MIGRATE] {_MIGRATION_2026_07_04_NAME} 遷移執行成功')
+    except Exception as _e:
+        # fail-open：印醒目錯誤但不阻止啟動（交易已由 with begin() 自動 rollback）
+        print('=' * 70)
+        print(f'[MIGRATE][ERROR] 開機遷移 {_MIGRATION_2026_07_04_NAME} 失敗，已回滾：{_e}')
+        print('[MIGRATE][ERROR] 網站將以舊 schema 繼續運行，請盡快人工處理！')
+        print('=' * 70)
+
 # 確保新表（如 ai_designs）在部署後自動建立；create_all 具冪等性，不動既有表
 with app.app_context():
     try:
         db.create_all()
     except Exception as _e:
         print(f'[WARN] db.create_all skipped: {_e}')
+    _run_startup_migrations()
 
 if __name__ == '__main__':
     app.run(debug=False)
