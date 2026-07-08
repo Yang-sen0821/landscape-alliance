@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, io, json, uuid, time, hashlib, base64
+import os, io, json, uuid, time, hashlib, base64, math
 import re
 import urllib.request as _u_req
 import urllib.parse as _u_parse
@@ -1158,7 +1158,7 @@ def _parse_area(s):
         v = float(s)
     except (TypeError, ValueError):
         return None
-    return v if v >= 0 else None
+    return v if math.isfinite(v) and v >= 0 else None
 
 @app.route('/works')
 def works():
@@ -1854,6 +1854,7 @@ def upload():
     if request.method == 'POST':
         name   = request.form.get('name','').strip()
         scale  = request.form.get('scale','').strip()
+        scale_unit = request.form.get('scale_unit','ping').strip()
         tags   = request.form.get('tags','').strip()
         price  = request.form.get('price','').strip()
         photos = request.files.getlist('photos')
@@ -1861,6 +1862,19 @@ def upload():
         if not name:
             flash('請填寫作品名稱', 'error')
             return render_template('member/upload.html')
+        # 面積可用坪或 m² 輸入，一律換算成坪儲存（/works 篩選與相似推薦皆以坪解讀）
+        if scale_unit not in ('ping', 'm2'):
+            scale_unit = 'ping'
+        try:
+            _sv = float(scale)
+        except ValueError:
+            _sv = None
+        if _sv is None or not math.isfinite(_sv) or _sv <= 0:
+            flash('請填寫有效的案場規模（大於 0 的數字）', 'error')
+            return render_template('member/upload.html')
+        if scale_unit == 'm2':
+            _sv /= PING_TO_M2
+        scale = f'{_sv:.2f}'.rstrip('0').rstrip('.')
         ok, err = _check_field_lengths(
             作品名稱=(name, 255), 標籤=(tags, 500), 金額=(price, 50), 規模=(scale, 50),
         )
