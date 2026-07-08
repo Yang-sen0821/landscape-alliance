@@ -1150,12 +1150,27 @@ def index():
     return render_template('public/index.html', works=works, tags=tags,
                            total=len(get_works('published')), rmap=rmap)
 
+PING_TO_M2 = 3.305785  # 與 upload.html convertScale() 一致
+
+def _parse_area(s):
+    """面積輸入防呆：非數字/負數視為未填。"""
+    try:
+        v = float(s)
+    except (TypeError, ValueError):
+        return None
+    return v if v >= 0 else None
+
 @app.route('/works')
 def works():
     all_w = get_works('published')
     tag   = request.args.get('tag', '').strip()
     mn    = request.args.get('min', '').strip()
     mx    = request.args.get('max', '').strip()
+    a_mn  = request.args.get('area_min', '').strip()
+    a_mx  = request.args.get('area_max', '').strip()
+    a_unit = request.args.get('area_unit', 'ping').strip()
+    if a_unit not in ('ping', 'm2'):
+        a_unit = 'ping'
     filtered = all_w
     if tag:
         filtered = [w for w in filtered if tag in (w.tags or '')]
@@ -1167,10 +1182,29 @@ def works():
         filtered = [w for w in filtered
                     if (w.price or '').replace(',','').replace('$','').isdigit()
                     and int((w.price or '').replace(',','').replace('$','')) <= int(mx)]
+    # 面積篩選：scale 以坪儲存；m² 輸入先換算成坪再比較
+    amin = _parse_area(a_mn)
+    amax = _parse_area(a_mx)
+    if a_unit == 'm2':
+        if amin is not None: amin /= PING_TO_M2
+        if amax is not None: amax /= PING_TO_M2
+    if amin is not None or amax is not None:
+        def _area_ok(w):
+            s = _parse_area((w.scale or '').strip())
+            if s is None:
+                return False  # 無面積資料的作品在面積篩選時排除
+            if amin is not None and s < amin:
+                return False
+            if amax is not None and s > amax:
+                return False
+            return True
+        filtered = [w for w in filtered if _area_ok(w)]
     rmap = ratings_map(filtered)
     return render_template('public/works.html', works=filtered,
                            tags=get_all_tags(), active_tag=tag,
-                           min_val=mn, max_val=mx, rmap=rmap)
+                           min_val=mn, max_val=mx,
+                           area_min=a_mn, area_max=a_mx, area_unit=a_unit,
+                           rmap=rmap)
 
 @app.route('/work/<work_id>')
 def work_detail(work_id):

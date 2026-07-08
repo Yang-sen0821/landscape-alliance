@@ -10,6 +10,8 @@
   .filter-group label{font-size:.8rem;font-weight:600;color:var(--gray)}
   .filter-group input{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;width:110px}
   .filter-group input:focus{outline:none;border-color:var(--g500)}
+  .filter-group select{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;background:#fff;height:38px}
+  .filter-group select:focus{outline:none;border-color:var(--g500)}
   .tag-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
   .tag-btn{padding:5px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:.82rem;font-weight:500;cursor:pointer;transition:.15s;color:var(--gray);text-decoration:none}
   .tag-btn:hover,.tag-btn.active{background:var(--g700);color:#fff;border-color:var(--g700)}
@@ -53,8 +55,23 @@
             <label>最高金額 (NT$)</label>
             <input type="number" name="max" placeholder="例：200000" value="{{ max_val }}">
           </div>
+          <div class="filter-group">
+            <label>最小面積</label>
+            <input type="number" name="area_min" min="0" step="0.5" placeholder="例：10" value="{{ area_min }}">
+          </div>
+          <div class="filter-group">
+            <label>最大面積</label>
+            <input type="number" name="area_max" min="0" step="0.5" placeholder="例：50" value="{{ area_max }}">
+          </div>
+          <div class="filter-group">
+            <label>面積單位</label>
+            <select name="area_unit">
+              <option value="ping" {% if area_unit != 'm2' %}selected{% endif %}>坪</option>
+              <option value="m2" {% if area_unit == 'm2' %}selected{% endif %}>平方公尺 (m²)</option>
+            </select>
+          </div>
           <button type="submit" class="btn btn-primary btn-sm" style="height:38px">篩選</button>
-          {% if min_val or max_val %}<a href="{{ url_for('works', tag=active_tag) }}" class="btn btn-outline btn-sm" style="height:38px">清除</a>{% endif %}
+          {% if min_val or max_val or area_min or area_max %}<a href="{{ url_for('works', tag=active_tag) }}" class="btn btn-outline btn-sm" style="height:38px">清除</a>{% endif %}
         </div>
       </form>
     </div>
