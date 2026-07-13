@@ -1150,6 +1150,13 @@ def index():
     return render_template('public/index.html', works=works, tags=tags,
                            total=len(get_works('published')), rmap=rmap)
 
+@app.route('/google1cfc30929b33f4bc.html')
+def google_site_verification():
+    """Google Search Console 網站所有權驗證檔案（純文字內容即可）。"""
+    return make_response(
+        ('google-site-verification: google1cfc30929b33f4bc.html',
+         200, {'Content-Type': 'text/html'}))
+
 PING_TO_M2 = 3.305785  # 與 upload.html convertScale() 一致
 
 def _parse_area(s):
