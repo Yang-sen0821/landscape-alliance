@@ -69,6 +69,8 @@ app.request_class.max_form_memory_size = 12 * 1024 * 1024
 ADMIN_EMAIL     = os.environ.get('ADMIN_EMAIL', 'g2349311@gmail.com')
 DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID', '1qCzsnVGQl6RAQprtWuh4aCMt98J59BkD')
 CONTACT_PHONE   = os.environ.get('CONTACT_PHONE', '0910-006-229')
+# SEO：canonical / OG / sitemap 一律用此絕對網址；換自訂網域時只需改此環境變數
+SITE_BASE_URL   = os.environ.get('SITE_BASE_URL', 'https://landscape-alliance.onrender.com').rstrip('/')
 
 # ── 客戶帳號體系（與聯盟夥伴完全分離）外部服務金鑰 ──────────────
 # 未設定時優雅降級：Google 按鈕不渲染、reCAPTCHA 跳過驗證且不渲染 widget
@@ -613,6 +615,7 @@ def _customer_template_vars():
     return dict(
         google_client_id=GOOGLE_OAUTH_CLIENT_ID,
         recaptcha_site_key=(RECAPTCHA_SITE_KEY if _recaptcha_enabled() else ''),
+        site_base_url=SITE_BASE_URL,
     )
 
 # ── 行為事件記錄 ────────────────────────────────────────────────
@@ -1156,6 +1159,47 @@ def google_site_verification():
     return make_response(
         ('google-site-verification: google1cfc30929b33f4bc.html',
          200, {'Content-Type': 'text/html'}))
+
+@app.route('/robots.txt')
+def robots_txt():
+    """對所有爬蟲開放公開頁面（含 Googlebot / OAI-SearchBot / PerplexityBot），
+    僅擋後台與會員專區；並宣告 sitemap 位置。"""
+    lines = [
+        'User-agent: *',
+        'Disallow: /admin',
+        'Disallow: /account',
+        'Disallow: /supplier',
+        'Disallow: /my-designs',
+        'Disallow: /my-profile',
+        'Disallow: /my-works',
+        'Disallow: /upload',
+        'Disallow: /logout',
+        '',
+        f'Sitemap: {SITE_BASE_URL}/sitemap.xml',
+        '',
+    ]
+    return make_response(('\n'.join(lines), 200,
+                          {'Content-Type': 'text/plain; charset=utf-8'}))
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    """動態 sitemap：公開靜態頁 + 全部已發布作品頁。"""
+    entries = [(f'{SITE_BASE_URL}{p}', None)
+               for p in ('/', '/works', '/platform', '/ai-design', '/contact')]
+    for w in Work.query.filter_by(status='published').all():
+        lastmod = w.created_at.strftime('%Y-%m-%d') if w.created_at else None
+        entries.append((f'{SITE_BASE_URL}/work/{w.id}', lastmod))
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for loc, lastmod in entries:
+        parts.append('  <url>')
+        parts.append(f'    <loc>{loc}</loc>')
+        if lastmod:
+            parts.append(f'    <lastmod>{lastmod}</lastmod>')
+        parts.append('  </url>')
+    parts.append('</urlset>')
+    return make_response(('\n'.join(parts), 200,
+                          {'Content-Type': 'application/xml; charset=utf-8'}))
 
 PING_TO_M2 = 3.305785  # 與 upload.html convertScale() 一致
 

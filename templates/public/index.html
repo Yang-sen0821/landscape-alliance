@@ -1,5 +1,25 @@
 {% extends 'base.html' %}
 {% block title %}台灣景觀聯盟 — 找景觀設計、施工，就來這裡{% endblock %}
+{% block meta_description %}台灣景觀聯盟是連結業主與全台景觀設計、庭園施工專業夥伴的媒合平台：瀏覽真實完工作品找靈感、用 AI 自助設計模擬你的庭院、免費詢價由聯盟夥伴為你服務。{% endblock %}
+{% block jsonld %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "台灣景觀聯盟",
+  "url": "{{ site_base_url }}/",
+  "description": "連結業主與全台景觀設計、庭園施工專業夥伴的媒合平台"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "台灣景觀聯盟",
+  "url": "{{ site_base_url }}/"
+}
+</script>
+{% endblock %}
 
 {% block head %}
 <style>
