@@ -659,6 +659,20 @@ def get_materials(supplier_email=None, status=None):
         query = query.filter_by(status=status)
     return query.all()
 
+# ── 舊網域 301：onrender.com 舊網址一律導向正式網域（SITE_BASE_URL）──
+_CANONICAL_HOST = _u_parse.urlparse(SITE_BASE_URL).netloc.lower()
+
+@app.before_request
+def _redirect_legacy_host():
+    # 只轉舊的 *.onrender.com 主機，避免誤傷本機開發（localhost）與正式網域本身
+    host = (request.host or '').split(':')[0].lower()
+    if host.endswith('.onrender.com') and host != _CANONICAL_HOST:
+        if request.method in ('GET', 'HEAD'):
+            target = f'{SITE_BASE_URL}{request.path}'
+            if request.query_string:
+                target += '?' + request.query_string.decode('utf-8', 'ignore')
+            return redirect(target, code=301)
+
 # ── 單一登入接橋（identity bridge） ─────────────────────────────
 @app.before_request
 def _identity_bridge():
