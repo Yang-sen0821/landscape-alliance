@@ -37,7 +37,7 @@
             <p style="margin-top:8px;color:var(--gray)">點此選擇或拖曳圖片</p>
             <p style="font-size:.8rem;color:var(--gray)">JPG / PNG，單檔上限 10MB</p>
           </div>
-          <input type="file" id="photo-input" name="photos" multiple accept="image/*"
+          <input type="file" id="photo-input" name="photos" multiple accept="image/*,.heic,.heif"
                  style="display:none" onchange="previewPhotos(this)">
           <div class="preview-grid" id="preview-grid"></div>
           <button type="button" class="btn btn-outline" id="detect-btn" disabled
@@ -135,6 +135,15 @@ function previewPhotos(input) {
   Array.from(input.files).forEach(f => {
     const img = document.createElement('img');
     img.className = 'preview-img';
+    // HEIC 在桌機瀏覽器無法解碼 → 換成說明方塊，避免顯示破圖
+    img.onerror = () => {
+      const ph = document.createElement('div');
+      ph.className = 'preview-img';
+      ph.style.cssText = 'display:flex;align-items:center;justify-content:center;text-align:center;'
+        + 'background:#f2f2f2;color:#666;font-size:12px;padding:6px;box-sizing:border-box;';
+      ph.textContent = f.name + '（HEIC，上傳後自動轉檔）';
+      img.replaceWith(ph);
+    };
     img.src = URL.createObjectURL(f);
     grid.appendChild(img);
   });

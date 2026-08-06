@@ -96,12 +96,12 @@
       </div>
 
       <div class="form-group">
-        <label>1. 現場照片（jpg / png / webp，10MB 以內）</label>
+        <label>1. 現場照片（jpg / png / webp / heic，10MB 以內）</label>
         <label class="drop" for="photoInput">
           <i class="bi bi-cloud-arrow-up" style="font-size:1.8rem;color:var(--g500)"></i>
           <div id="dropHint">點擊選擇照片</div>
           <img id="preview" style="display:none" alt="">
-          <input type="file" id="photoInput" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif" style="display:none" required>
+          <input type="file" id="photoInput" name="photo" accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,image/heic,image/heif" style="display:none" required>
         </label>
 
         <div id="maskSection">
@@ -215,6 +215,15 @@
     const f = input.files[0];
     if (!f) { maskSection.style.display = 'none'; resetMaskBoard(); return; }
     const img = document.getElementById('preview');
+    // HEIC 在桌機瀏覽器無法解碼 → 預覽與畫筆遮罩都不可用，
+    // 但伺服器端會轉檔，仍可直接送出生成，只是不能圈選範圍。
+    img.onerror = () => {
+      img.style.display = 'none';
+      maskSection.style.display = 'none';
+      resetMaskBoard();
+      document.getElementById('dropHint').textContent =
+        f.name + '（HEIC 照片，此瀏覽器無法預覽；仍可直接送出生成，但無法使用畫筆指定範圍）';
+    };
     img.src = URL.createObjectURL(f);
     img.style.display = 'block';
     document.getElementById('dropHint').textContent = f.name;

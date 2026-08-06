@@ -840,8 +840,58 @@ app.jinja_env.globals.update(photo_urls=photo_urls, fmt_price=fmt_price,
                              tw_counties=TW_COUNTIES)
 
 # ── Drive upload ──────────────────────────────────────────────
-_ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp', 'gif'}
+_ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif'}
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+_HEIC_EXTENSIONS = {'heic', 'heif'}
+
+# HEIC/HEIF＝iPhone 預設拍照格式。瀏覽器（Chrome/Edge/Firefox）不會顯示，
+# Gemini 也不吃，所以一律在伺服器端轉成 JPEG 再往下游送，不原樣保存。
+# 套件缺失時不讓整個 app 掛掉，只讓 HEIC 上傳失敗並回明確訊息。
+try:
+    import pillow_heif as _pillow_heif
+    _pillow_heif.register_heif_opener()
+    _HEIC_OK = True
+except Exception:
+    _HEIC_OK = False
+
+
+def _normalize_upload(data, filename, content_type):
+    """把上傳影像正規化成下游吃得下的格式。
+
+    HEIC/HEIF → 解碼、套用 EXIF 旋轉、轉存 JPEG。
+    其他格式原樣返回（不重壓，避免無謂的畫質損失）。
+    回傳 (bytes, mime, ext)。失敗時拋 ValueError，訊息可直接給使用者看。
+    """
+    ext = os.path.splitext(filename)[1].lstrip('.').lower()
+    if ext not in _HEIC_EXTENSIONS:
+        return data, content_type or f'image/{"jpeg" if ext == "jpg" else ext}', ext
+    if not _HEIC_OK:
+        raise ValueError('伺服器目前無法處理 HEIC 照片，請改用 JPG 或 PNG 上傳')
+    try:
+        from PIL import Image, ImageOps
+        im = Image.open(io.BytesIO(data))
+        im = ImageOps.exif_transpose(im)   # iPhone 直式照片的旋轉資訊
+        if im.mode not in ('RGB', 'L'):
+            im = im.convert('RGB')
+        # HEIC 壓縮率比 JPEG 好，轉檔後常常變大（實測 2.0MB → 2.4MB）。
+        # 大小上限是在轉檔前檢查的，這裡再收斂一次，確保交給 Drive／Gemini
+        # 的檔案仍在 10 MB 以內：先降品質，不夠再等比縮邊。
+        def _encode(image, quality):
+            b = io.BytesIO()
+            image.save(b, format='JPEG', quality=quality, optimize=True)
+            return b.getvalue()
+
+        out = _encode(im, 88)
+        for quality in (80, 72):
+            if len(out) <= _MAX_FILE_BYTES:
+                break
+            out = _encode(im, quality)
+        while len(out) > _MAX_FILE_BYTES and max(im.size) > 1600:
+            im = im.resize((max(1, im.width // 2), max(1, im.height // 2)), Image.LANCZOS)
+            out = _encode(im, 80)
+        return out, 'image/jpeg', 'jpg'
+    except Exception:
+        raise ValueError('HEIC 照片解碼失敗，請改用 JPG 或 PNG 上傳')
 
 def _drive_oauth_creds():
     """OAuth2 credentials for Drive — uses g2349311@musengarden.com, avoids SA quota issue."""
@@ -891,7 +941,9 @@ def upload_photos(files, work_id):
             data = f.stream.read()
             if len(data) > _MAX_FILE_BYTES:
                 raise ValueError(f'檔案「{f.filename}」超過 10 MB 上限（{len(data) // 1024 // 1024} MB）')
-            media = MediaIoBaseUpload(io.BytesIO(data), mimetype=f.content_type or 'image/jpeg', resumable=False)
+            # HEIC → JPEG（副檔名一併換掉，Drive 上不留 HEIC）
+            data, up_mime, ext = _normalize_upload(data, f.filename, f.content_type)
+            media = MediaIoBaseUpload(io.BytesIO(data), mimetype=up_mime, resumable=False)
             cf = svc.files().create(
                 body={'name': f'{work_id}_{i}.{ext}', 'parents': [wfid]},
                 media_body=media, fields='id'
@@ -1507,7 +1559,11 @@ def ai_design():
         if len(src_bytes) > _MAX_FILE_BYTES:
             flash('照片超過 10 MB 上限，請壓縮後再試', 'error')
             return render_template('public/ai_design.html', **ctx)
-        src_mime = photo.content_type or f'image/{"jpeg" if ext == "jpg" else ext}'
+        try:
+            src_bytes, src_mime, ext = _normalize_upload(src_bytes, photo.filename, photo.content_type)
+        except ValueError as e:
+            flash(str(e), 'error')
+            return render_template('public/ai_design.html', **ctx)
 
         # 參照作品（可選）：抓不到圖就放棄參照繼續生成，絕不讓整個生成失敗
         ref_bytes = ref_mime = None
@@ -1990,7 +2046,10 @@ def api_detect_tags():
     data = photo.stream.read()
     if len(data) > _MAX_FILE_BYTES:
         return {'tags': [], 'error': '照片超過 10 MB 上限'}, 400
-    mime = photo.content_type or f'image/{"jpeg" if ext == "jpg" else ext}'
+    try:
+        data, mime, ext = _normalize_upload(data, photo.filename, photo.content_type)
+    except ValueError as e:
+        return {'tags': [], 'error': str(e)}, 400
     try:
         tags = detect_work_tags(data, mime)
     except Exception:
