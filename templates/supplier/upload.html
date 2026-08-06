@@ -14,6 +14,15 @@
   .tag-pill:hover{border-color:var(--g500);color:var(--g700)}
   .tag-pill.selected{background:var(--g700);color:#fff;border-color:var(--g700)}
   .sel-hint{font-size:.8rem;color:var(--gray);margin-top:6px}
+  /* 上傳／轉檔等待遮罩（HEIC 轉檔在伺服器端，需明確回饋避免看起來像當掉）*/
+  #loading{display:none;position:fixed;inset:0;background:rgba(255,255,255,.92);z-index:999;
+           flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px}
+  #loading .spinner{width:52px;height:52px;border:5px solid var(--g100);border-top-color:var(--g700);
+           border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loadTitle{font-weight:700;color:var(--g900);font-size:1.05rem}
+  #loadSub{color:var(--gray);font-size:.9rem;line-height:1.7;max-width:420px}
+  #loadElapsed{color:var(--gray);font-size:.82rem}
 </style>
 {% endblock %}
 {% block content %}
@@ -86,7 +95,7 @@
         <div class="upload-zone" onclick="document.getElementById('photo-input').click()" id="drop-zone">
           <i class="bi bi-images" style="font-size:2rem;color:var(--g500)"></i>
           <p style="margin-top:8px;color:var(--gray)">點此選擇或拖曳圖片</p>
-          <p style="font-size:.8rem;color:var(--gray)">JPG / PNG，建議含多角度與實際使用情境</p>
+          <p style="font-size:.8rem;color:var(--gray)">JPG / PNG / HEIC，建議含多角度與實際使用情境</p>
         </div>
         <input type="file" id="photo-input" name="photos" multiple accept="image/*,.heic,.heif" style="display:none" onchange="previewPhotos(this)">
         <div class="preview-grid" id="preview-grid"></div>
@@ -98,6 +107,13 @@
       <p style="font-size:.8rem;color:var(--gray);text-align:center;margin-top:12px">審核通過後即在平台公開展示，通常 1–3 個工作天</p>
     </form>
   </div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadTitle">上傳中…</div>
+  <div id="loadSub">請勿關閉或重新整理視窗</div>
+  <div id="loadElapsed"></div>
 </div>
 
 <script>
@@ -146,5 +162,39 @@ dz.addEventListener('drop', e => {
   inp.files = e.dataTransfer.files;
   previewPhotos(inp);
 });
+
+// ── 上傳／HEIC 轉檔等待回饋 ──────────────────────────────
+// HEIC 轉檔發生在伺服器端（瀏覽器無法解 HEIC），送出後到回應之間
+// 原本完全沒有畫面回饋，看起來像當掉。這裡顯示遮罩＋計時。
+function _hasHeic(files) {
+  return Array.from(files || []).some(f => /\.(heic|heif)$/i.test(f.name));
+}
+function showLoading(title, sub) {
+  const box = document.getElementById('loading');
+  document.getElementById('loadTitle').textContent = title;
+  document.getElementById('loadSub').textContent = sub;
+  box.style.display = 'flex';
+  const t0 = Date.now();
+  const el = document.getElementById('loadElapsed');
+  clearInterval(window.__loadTimer);
+  el.textContent = '已等待 0 秒';
+  window.__loadTimer = setInterval(() => {
+    el.textContent = '已等待 ' + Math.round((Date.now() - t0) / 1000) + ' 秒';
+  }, 1000);
+}
+function hideLoading() {
+  clearInterval(window.__loadTimer);
+  document.getElementById('loading').style.display = 'none';
+}
+document.querySelector('form[enctype="multipart/form-data"]').addEventListener('submit', () => {
+  const files = document.getElementById('photo-input').files;
+  if (_hasHeic(files)) {
+    showLoading('照片上傳中，伺服器轉檔中…',
+      '你選的是 HEIC 照片，系統會在伺服器端轉成 JPEG 再存檔。照片較大或張數較多時會需要數十秒，請勿關閉視窗。');
+  } else {
+    showLoading('照片上傳中…', '請勿關閉或重新整理視窗');
+  }
+});
+
 </script>
 {% endblock %}
