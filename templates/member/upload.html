@@ -23,6 +23,25 @@
   #loadTitle{font-weight:700;color:var(--g900);font-size:1.05rem}
   #loadSub{color:var(--gray);font-size:.9rem;line-height:1.7;max-width:420px}
   #loadElapsed{color:var(--gray);font-size:.82rem}
+  /* 拖曳當下即轉檔的進度條 */
+  #convBox{display:none;margin-top:12px;background:var(--g50);border:1.5px solid var(--g300);
+           border-radius:10px;padding:12px 14px}
+  #convText{font-size:.85rem;color:var(--g900);font-weight:600}
+  #convFile{font-size:.78rem;color:var(--gray);margin-top:2px;word-break:break-all}
+  #convTrack{height:6px;background:var(--g100);border-radius:99px;margin-top:8px;overflow:hidden}
+  #convFill{height:100%;width:0;background:var(--g700);border-radius:99px;transition:width .25s}
+  /* 縮圖與封面選擇 */
+  .ph-item{position:relative;width:80px}
+  .ph-item .preview-img{display:block;width:80px;height:60px;object-fit:cover;border-radius:6px;
+                        border:2px solid transparent}
+  .ph-item.cover .preview-img{border-color:var(--g700)}
+  .ph-badge{position:absolute;top:2px;left:2px;background:var(--g700);color:#fff;font-size:.62rem;
+            font-weight:700;padding:1px 6px;border-radius:99px;letter-spacing:.04em}
+  .ph-set{width:100%;margin-top:4px;font-size:.68rem;padding:3px 0;border-radius:6px;
+          border:1.5px solid var(--border);background:#fff;color:var(--gray);cursor:pointer;
+          font-family:inherit}
+  .ph-set:hover{border-color:var(--g500);color:var(--g700)}
+  .ph-item.cover .ph-set{visibility:hidden}
 </style>
 {% endblock %}
 {% block content %}
@@ -48,7 +67,13 @@
           </div>
           <input type="file" id="photo-input" name="photos" multiple accept="image/*,.heic,.heif"
                  style="display:none" onchange="previewPhotos(this)">
+          <div id="convBox">
+            <div id="convText">轉檔中…</div>
+            <div id="convFile"></div>
+            <div id="convTrack"><div id="convFill"></div></div>
+          </div>
           <div class="preview-grid" id="preview-grid"></div>
+          <p id="cover-hint" style="font-size:.78rem;color:var(--gray);margin-top:6px;display:none"></p>
           <button type="button" class="btn btn-outline" id="detect-btn" disabled
                   onclick="detectTags()" style="margin-top:10px">
             🔍 AI 偵測標籤
@@ -145,27 +170,164 @@ function convertScale() {
     : '≈ ' + (n * 3.305785).toFixed(1) + ' m²';
 }
 
-function previewPhotos(input) {
+// ── 選檔／拖曳當下就轉檔（瀏覽器端），轉完立刻有縮圖可選封面 ──────
+// 瀏覽器無法顯示 HEIC，若等到送出才由伺服器轉檔，使用者就看不到縮圖、
+// 也無法挑封面。因此改成選檔當下用 heic2any（libheif WASM）在前端轉成
+// JPEG，再把轉好的檔案塞回 input，伺服器端的轉檔邏輯保留為後備。
+let selectedFiles = [];          // 順序即上傳順序，第 0 張＝封面
+let _heicLibPromise = null;
+
+function isHeic(f) {
+  return /\.(heic|heif)$/i.test(f.name) || /image\/hei[cf]/i.test(f.type || '');
+}
+
+// 1.4MB 的解碼器只在真的遇到 HEIC 時才載入，一般 JPG 上傳不受影響
+let _heicMod = null;
+function ensureHeicLib() {
+  if (_heicMod) return Promise.resolve(_heicMod);
+  if (_heicLibPromise) return _heicLibPromise;
+  _heicLibPromise = new Promise((resolve, reject) => {
+    if (window.libheif) return resolve();
+    const s = document.createElement('script');
+    s.src = "{{ url_for('static', filename='vendor/libheif-bundle.js') }}";
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('HEIC 解碼器載入失敗'));
+    document.head.appendChild(s);
+  }).then(async () => {
+    // 新版 libheif-js 匯出的是 factory，要 await 才拿得到模組
+    _heicMod = (typeof libheif === 'function') ? await libheif() : libheif;
+    return _heicMod;
+  });
+  return _heicLibPromise;
+}
+
+// HEIC → JPEG File（解碼後畫進 canvas 再輸出）
+async function heicToJpeg(file) {
+  const lib = await ensureHeicLib();
+  const decoder = new lib.HeifDecoder();
+  const imgs = decoder.decode(new Uint8Array(await file.arrayBuffer()));
+  if (!imgs || !imgs.length) throw new Error('HEIC 沒有可解的影像');
+  const im = imgs[0];
+  const w = im.get_width(), h = im.get_height();
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const idata = ctx.createImageData(w, h);
+  await new Promise((res, rej) =>
+    im.display(idata, r => r ? res() : rej(new Error('HEIC 影像展開失敗'))));
+  ctx.putImageData(idata, 0, 0);
+  try { imgs.forEach(x => x.free && x.free()); } catch (e) {}
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
+  cv.width = cv.height = 0;   // 釋放大張 canvas
+  if (!blob) throw new Error('JPEG 輸出失敗');
+  return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' });
+}
+
+function convShow(done, total, name) {
+  const box = document.getElementById('convBox');
+  box.style.display = 'block';
+  document.getElementById('convText').textContent = `HEIC 轉檔中… ${done} / ${total}`;
+  document.getElementById('convFile').textContent = name || '';
+  document.getElementById('convFill').style.width = Math.round(done / total * 100) + '%';
+}
+function convHide() { document.getElementById('convBox').style.display = 'none'; }
+
+function syncInput() {
+  const dt = new DataTransfer();
+  selectedFiles.forEach(f => dt.items.add(f));
+  document.getElementById('photo-input').files = dt.files;
+  document.getElementById('detect-btn').disabled = selectedFiles.length === 0;
+  const hint = document.getElementById('cover-hint');
+  if (selectedFiles.length) {
+    hint.textContent = '第一張為封面照片，點縮圖下方的「設為封面」可更換。';
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+function renderPreviews() {
   const grid = document.getElementById('preview-grid');
   grid.innerHTML = '';
-  Array.from(input.files).forEach(f => {
+  selectedFiles.forEach((f, idx) => {
+    const item = document.createElement('div');
+    item.className = 'ph-item' + (idx === 0 ? ' cover' : '');
     const img = document.createElement('img');
     img.className = 'preview-img';
-    // HEIC 在桌機瀏覽器無法解碼 → 換成說明方塊，避免顯示破圖
+    // 只有在前端轉檔失敗、仍是 HEIC 的情況才會走到這裡
     img.onerror = () => {
       const ph = document.createElement('div');
       ph.className = 'preview-img';
       ph.style.cssText = 'display:flex;align-items:center;justify-content:center;text-align:center;'
-        + 'background:#f2f2f2;color:#666;font-size:12px;padding:6px;box-sizing:border-box;';
-      ph.textContent = f.name + '（HEIC，上傳後自動轉檔）';
+        + 'background:#f2f2f2;color:#666;font-size:11px;padding:4px;box-sizing:border-box;';
+      ph.textContent = '無法預覽\n上傳後轉檔';
       img.replaceWith(ph);
     };
     img.src = URL.createObjectURL(f);
-    grid.appendChild(img);
+    item.appendChild(img);
+    if (idx === 0) {
+      const b = document.createElement('span');
+      b.className = 'ph-badge';
+      b.textContent = '封面';
+      item.appendChild(b);
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ph-set';
+    btn.textContent = '設為封面';
+    btn.onclick = () => {
+      const [pick] = selectedFiles.splice(idx, 1);
+      selectedFiles.unshift(pick);
+      syncInput();
+      renderPreviews();
+    };
+    item.appendChild(btn);
+    grid.appendChild(item);
   });
-  // 選了照片才可按 AI 偵測標籤
-  document.getElementById('detect-btn').disabled = input.files.length === 0;
 }
+
+async function handleFiles(fileList) {
+  const incoming = Array.from(fileList || []);
+  if (!incoming.length) return;
+  selectedFiles = [];
+  document.getElementById('preview-grid').innerHTML = '';
+  const heicCount = incoming.filter(isHeic).length;
+  let done = 0, failed = 0;
+  if (heicCount) {
+    convShow(0, heicCount, '載入解碼器…');
+    try {
+      await ensureHeicLib();
+    } catch (e) {
+      convHide();
+      alert('HEIC 解碼器載入失敗。照片仍然可以上傳（送出後由伺服器轉檔），'
+          + '但這裡看不到縮圖，也無法在這頁挑封面。');
+    }
+  }
+  for (const orig of incoming) {
+    let f = orig;
+    if (isHeic(orig) && _heicMod) {
+      convShow(done, heicCount, orig.name);
+      try {
+        f = await heicToJpeg(orig);
+      } catch (e) {
+        failed += 1;   // 前端轉檔失敗 → 保留原檔，送出後由伺服器端轉（後端已支援）
+      }
+      done += 1;
+      convShow(done, heicCount, orig.name);
+    }
+    selectedFiles.push(f);
+  }
+  convHide();
+  if (failed) {
+    alert(`有 ${failed} 張 HEIC 在瀏覽器轉檔失敗，這幾張看不到縮圖，`
+        + '但仍會照常上傳並由伺服器轉檔。');
+  }
+  syncInput();
+  renderPreviews();
+}
+
+// 保留原本的進入點名稱（input 的 onchange 還是呼叫它）
+function previewPhotos(input) { handleFiles(input.files); }
 
 // ── AI 偵測標籤（輔助不是強制，結果可自行刪改） ──────────────
 async function detectTags() {
@@ -248,9 +410,7 @@ dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dra
 dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
 dz.addEventListener('drop', e => {
   e.preventDefault(); dz.classList.remove('drag');
-  const inp = document.getElementById('photo-input');
-  inp.files = e.dataTransfer.files;
-  previewPhotos(inp);
+  handleFiles(e.dataTransfer.files);   // 直接處理拖進來的檔案，轉完才寫回 input
 });
 
 // ── 上傳／HEIC 轉檔等待回饋 ──────────────────────────────
